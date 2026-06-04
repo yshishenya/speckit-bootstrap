@@ -134,8 +134,34 @@ $speckit-github-issue-canon-validate
 - installs the official `agent-context` and `git` extensions;
 - installs `github-issue-canon` from Yan's GitHub extension catalog;
 - registers `$speckit-github-issue-canon-*` skills;
+- configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
 - removes project-local duplicate skills by default.
+
+## Git Auto-Commit Defaults
+
+Bootstrap keeps Spec Kit's git extension installed from upstream, then applies a
+safe project policy after each refresh.
+
+Enabled by default:
+
+- `after_constitution`
+- `after_specify`
+- `after_clarify`
+- `after_plan`
+- `after_checklist`
+- `after_tasks`
+- `after_analyze`
+
+Disabled by default:
+
+- all `before_*` hooks;
+- `after_implement`;
+- `after_taskstoissues`.
+
+This captures completed Spec Kit documentation artifacts while keeping
+implementation code, generated build outputs, unrelated working tree changes,
+and external issue synchronization under explicit user control.
 
 ## Latest-From-Git Policy
 
