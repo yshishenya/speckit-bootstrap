@@ -174,10 +174,6 @@ ensure_extension_from_url() {
   local expected_skill="${3:-}"
   local output
 
-  if extension_installed "$name" && { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; }; then
-    return 0
-  fi
-
   if extension_installed "$name"; then
     specify extension remove "$name" --keep-config --force >/dev/null
   fi
