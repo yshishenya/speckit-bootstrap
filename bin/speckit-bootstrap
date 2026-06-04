@@ -1,0 +1,318 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: speckit-bootstrap [PROJECT_DIR] [--keep-local-skills] [--skip-cli-update]
+
+Bootstraps GitHub Spec Kit for Codex in one command:
+  - installs/updates official specify-cli from github/spec-kit
+  - initializes or updates project-local .specify state
+  - installs official core workflow and extensions
+  - syncs generated speckit-* skills to ~/.agents/skills
+  - removes project-local speckit-* skill duplicates by default
+
+Environment:
+  SPEC_KIT_VERSION=vX.Y.Z   Optional pin for reproducible rollbacks.
+                            Default: resolve and install latest v* tag.
+  SPECKIT_GITHUB_ISSUE_CANON_URL
+                            Optional ZIP URL for the reusable GitHub Issue
+                            Canon extension. Default: yshishenya/main.
+  SPECKIT_EXTENSION_CATALOG_URL
+                            Optional catalog URL for Yan's approved Spec Kit
+                            extensions. Default: yshishenya/main catalog.
+EOF
+}
+
+PROJECT_DIR=""
+KEEP_LOCAL_SKILLS=0
+SKIP_CLI_UPDATE=0
+YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
+GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/refs/heads/main.zip}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --keep-local-skills)
+      KEEP_LOCAL_SKILLS=1
+      shift
+      ;;
+    --skip-cli-update)
+      SKIP_CLI_UPDATE=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "speckit-bootstrap: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [[ -n "$PROJECT_DIR" ]]; then
+        echo "speckit-bootstrap: PROJECT_DIR already set to '$PROJECT_DIR'" >&2
+        exit 2
+      fi
+      PROJECT_DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+PROJECT_DIR="${PROJECT_DIR:-$PWD}"
+PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+
+require_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "speckit-bootstrap: required command not found: $1" >&2
+    exit 1
+  fi
+}
+
+require_cmd git
+require_cmd uv
+
+resolve_spec_kit_version() {
+  local requested="${SPEC_KIT_VERSION:-latest}"
+  if [[ "$requested" != "latest" ]]; then
+    printf '%s\n' "$requested"
+    return
+  fi
+
+  git ls-remote --tags --sort='v:refname' \
+    https://github.com/github/spec-kit.git 'refs/tags/v*' |
+    sed -n 's#.*refs/tags/\(v[^^]*\)$#\1#p' |
+    tail -1
+}
+
+install_cli() {
+  if [[ "$SKIP_CLI_UPDATE" -eq 1 ]]; then
+    require_cmd specify
+    return
+  fi
+
+  local version
+  version="$(resolve_spec_kit_version)"
+  if [[ -z "$version" ]]; then
+    echo "speckit-bootstrap: could not resolve latest github/spec-kit tag" >&2
+    exit 1
+  fi
+
+  echo "speckit-bootstrap: installing specify-cli from github/spec-kit@$version"
+  uv tool install specify-cli --force \
+    --from "git+https://github.com/github/spec-kit.git@$version"
+}
+
+ensure_user_extension_catalog() {
+  local config_dir="$HOME/.specify"
+  local config="$config_dir/extension-catalogs.yml"
+  mkdir -p "$config_dir"
+
+  if [[ -f "$config" ]] && grep -Fq "$YAN_EXTENSION_CATALOG_URL" "$config"; then
+    return 0
+  fi
+
+  cat > "$config" <<EOF
+catalogs:
+  - name: yshishenya
+    url: $YAN_EXTENSION_CATALOG_URL
+    priority: 1
+    install_allowed: true
+    description: Yan's approved Spec Kit extensions
+  - name: default
+    url: https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json
+    priority: 10
+    install_allowed: true
+    description: Built-in catalog of installable extensions
+  - name: community
+    url: https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json
+    priority: 20
+    install_allowed: false
+    description: Community-contributed extensions (discovery only)
+EOF
+
+  echo "speckit-bootstrap: installed user extension catalog at $config"
+}
+
+extension_installed() {
+  local name="$1"
+  local list
+  list="$(specify extension list 2>/dev/null || true)"
+  printf '%s\n' "$list" | grep -Fq "$name"
+}
+
+ensure_extension() {
+  local name="$1"
+  local expected_skill="${2:-}"
+  local output
+
+  if extension_installed "$name" && { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; }; then
+    return 0
+  fi
+
+  if extension_installed "$name"; then
+    specify extension remove "$name" --keep-config --force >/dev/null
+  fi
+
+  if output="$(specify extension add "$name" 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  if printf '%s\n' "$output" | grep -Fq "already installed"; then
+    return 0
+  fi
+
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
+ensure_extension_from_url() {
+  local name="$1"
+  local url="$2"
+  local expected_skill="${3:-}"
+  local output
+
+  if extension_installed "$name" && { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; }; then
+    return 0
+  fi
+
+  if extension_installed "$name"; then
+    specify extension remove "$name" --keep-config --force >/dev/null
+  fi
+
+  if output="$(specify extension add "$name" 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  if output="$(printf 'y\n' | specify extension add "$name" --from "$url" 2>&1)"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+
+  if printf '%s\n' "$output" | grep -Fq "already installed"; then
+    return 0
+  fi
+
+  printf '%s\n' "$output" >&2
+  return 1
+}
+
+ensure_agent_context_config() {
+  local config="$PROJECT_DIR/.specify/extensions/agent-context/agent-context-config.yml"
+  [[ -f "$config" ]] || return 0
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$config" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines()
+out = []
+changed = False
+for line in lines:
+    if line.startswith("context_file:"):
+        out.append('context_file: "AGENTS.md"')
+        changed = True
+    else:
+        out.append(line)
+if not changed:
+    out.insert(0, 'context_file: "AGENTS.md"')
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+  else
+    if grep -q '^context_file:' "$config"; then
+      sed -i.bak 's#^context_file:.*#context_file: "AGENTS.md"#' "$config"
+      rm -f "$config.bak"
+    else
+      tmp="$(mktemp)"
+      printf 'context_file: "AGENTS.md"\n' > "$tmp"
+      cat "$config" >> "$tmp"
+      mv "$tmp" "$config"
+    fi
+  fi
+}
+
+sync_global_skills() {
+  local local_skills="$PROJECT_DIR/.agents/skills"
+  local global_skills="$HOME/.agents/skills"
+
+  if ! compgen -G "$local_skills/speckit-*" >/dev/null; then
+    echo "speckit-bootstrap: no local speckit skills generated in $local_skills" >&2
+    exit 1
+  fi
+
+  mkdir -p "$global_skills"
+  rm -rf "$global_skills"/speckit-*
+
+  local d name
+  for d in "$local_skills"/speckit-*; do
+    [[ -d "$d" ]] || continue
+    name="$(basename "$d")"
+    cp -R "$d" "$global_skills/$name"
+  done
+
+  echo "speckit-bootstrap: synced global skills to $global_skills"
+}
+
+clean_local_skill_duplicates() {
+  [[ "$KEEP_LOCAL_SKILLS" -eq 0 ]] || return 0
+
+  local local_skills="$PROJECT_DIR/.agents/skills"
+  [[ -d "$local_skills" ]] || return 0
+
+  rm -rf "$local_skills"/speckit-*
+  rmdir "$local_skills" 2>/dev/null || true
+  rmdir "$PROJECT_DIR/.agents" 2>/dev/null || true
+  echo "speckit-bootstrap: removed project-local speckit skill duplicates"
+}
+
+clean_caches() {
+  rm -rf \
+    "$PROJECT_DIR/.specify/extensions/.cache" \
+    "$PROJECT_DIR/.specify/integrations/.cache" \
+    "$PROJECT_DIR/.specify/workflows/.cache"
+}
+
+install_cli
+require_cmd specify
+ensure_user_extension_catalog
+
+cd "$PROJECT_DIR"
+
+if [[ ! -d ".specify" ]]; then
+  echo "speckit-bootstrap: initializing Spec Kit in $PROJECT_DIR"
+  specify init --here --integration codex --script sh --branch-numbering sequential --force
+else
+  echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
+  specify integration upgrade codex --integration-options="--skills" --force
+  specify workflow add speckit
+fi
+
+ensure_extension agent-context ".agents/skills/speckit-agent-context-update/SKILL.md"
+ensure_extension git ".agents/skills/speckit-git-feature/SKILL.md"
+ensure_extension_from_url \
+  github-issue-canon \
+  "$GITHUB_ISSUE_CANON_EXTENSION_URL" \
+  ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+specify extension update
+
+ensure_agent_context_config
+if [[ -x ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh" ]]; then
+  .specify/extensions/agent-context/scripts/bash/update-agent-context.sh || true
+fi
+
+sync_global_skills
+clean_local_skill_duplicates
+clean_caches
+
+specify self check
+
+echo
+echo "speckit-bootstrap: ready"
+echo "  project: $PROJECT_DIR"
+echo "  global skills: $HOME/.agents/skills/speckit-*"
+echo "  local skills: $([[ "$KEEP_LOCAL_SKILLS" -eq 1 ]] && echo kept || echo removed)"
