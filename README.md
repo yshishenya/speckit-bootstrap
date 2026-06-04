@@ -23,18 +23,108 @@ This installs:
 
 Make sure `~/.local/bin` is on your `PATH`.
 
-## Usage
+Re-run the same command any time you want to update the local
+`speckit-bootstrap` wrapper from this repository's latest `main`.
 
-From any project:
+## New Project Quickstart
+
+Create or open a project directory:
+
+```sh
+mkdir -p ~/Documents/my-project
+cd ~/Documents/my-project
+git init
+```
+
+Run bootstrap:
 
 ```sh
 speckit-bootstrap .
 ```
 
-Or:
+After it finishes, the project should have:
+
+```text
+.specify/
+AGENTS.md
+docs/github-issue-canon.md
+.github/ISSUE_TEMPLATE/
+```
+
+And global Codex skills should exist under:
+
+```text
+~/.agents/skills/speckit-*
+```
+
+For a fresh project, commit the generated baseline after reviewing it:
+
+```sh
+git add .specify AGENTS.md docs/github-issue-canon.md .github/ISSUE_TEMPLATE
+git commit -m "chore: bootstrap spec kit"
+```
+
+## Existing Project Refresh
+
+From an existing Spec Kit project:
+
+```sh
+cd /path/to/project
+speckit-bootstrap .
+```
+
+This refreshes:
+
+- official `specify-cli` from upstream `github/spec-kit`;
+- Codex Spec Kit integration files;
+- official `agent-context` and `git` extensions;
+- Yan's `github-issue-canon` extension from GitHub;
+- generated `speckit-*` skills in `~/.agents/skills`.
+
+Use this before starting a new Spec Kit slice, after upstream Spec Kit updates,
+or when you want to refresh the shared issue-canon automation.
+
+## Daily Usage
+
+```sh
+speckit-bootstrap .
+```
+
+Or from anywhere:
 
 ```sh
 speckit-bootstrap /path/to/project
+```
+
+Then use the normal Spec Kit skill flow in Codex:
+
+```text
+$speckit-specify
+$speckit-clarify
+$speckit-plan
+$speckit-checklist
+$speckit-tasks
+$speckit-analyze
+$speckit-taskstoissues
+$speckit-implement
+```
+
+When `$speckit-taskstoissues` runs, the `github-issue-canon` extension hooks are
+registered automatically:
+
+- `before_taskstoissues`: installs/refreshes issue canon files and labels;
+- `after_taskstoissues`: validates open Spec Kit issues against the canon.
+
+If validation reports old non-canonical issues, normalize them:
+
+```text
+$speckit-github-issue-canon-normalize
+```
+
+Then re-run:
+
+```text
+$speckit-github-issue-canon-validate
 ```
 
 ## What It Does
@@ -51,10 +141,17 @@ speckit-bootstrap /path/to/project
 
 The default behavior is not pinned to a local archive.
 
-- Official Spec Kit is resolved from upstream Git tags by default.
+- Official Spec Kit is resolved from the latest upstream Git tag by default.
 - `github-issue-canon` is resolved through Yan's extension catalog, whose
   `download_url` tracks the extension repository's `main` branch.
 - `speckit-bootstrap` itself is installed from this repository's `main` branch.
+
+To update everything to the latest default state:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
+speckit-bootstrap /path/to/project
+```
 
 For controlled rollback, set:
 
@@ -82,3 +179,39 @@ Environment:
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
+
+Useful examples:
+
+```sh
+# Fast refresh without reinstalling specify-cli
+speckit-bootstrap . --skip-cli-update
+
+# Keep project-local generated skills instead of only syncing global skills
+speckit-bootstrap . --keep-local-skills
+
+# Use official Spec Kit main instead of the latest release tag
+SPEC_KIT_VERSION=main speckit-bootstrap .
+```
+
+## Verification
+
+After bootstrap, run:
+
+```sh
+specify self check
+specify extension list
+ls ~/.agents/skills | grep speckit
+```
+
+For the issue canon extension:
+
+```sh
+python3 .specify/extensions/github-issue-canon/scripts/ensure_issue_canon.py
+python3 .specify/extensions/github-issue-canon/scripts/validate_issue_canon.py
+```
+
+Expected validation output:
+
+```text
+github-issue-canon: OK (... Spec Kit issue(s) checked)
+```
