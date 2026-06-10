@@ -22,6 +22,8 @@ This installs:
 ```
 
 Make sure `~/.local/bin` is on your `PATH`.
+`speckit-bootstrap` is the only standalone executable installed there.
+All other `speckit-*` entries are Codex skills, not shell binaries.
 
 Re-run the same command any time you want to update the local
 `speckit-bootstrap` wrapper from this repository's latest `main`.
@@ -96,7 +98,7 @@ Or from anywhere:
 speckit-bootstrap /path/to/project
 ```
 
-Then use the normal Spec Kit skill flow in Codex:
+Then use the normal Spec Kit skill flow in Codex (repo convention here uses `$`-prefixed skill names):
 
 ```text
 $speckit-specify
@@ -126,6 +128,28 @@ Then re-run:
 ```text
 $speckit-github-issue-canon-validate
 ```
+
+## Agent Quick Reference (concise)
+
+Use this when running Spec Kit from Codex:
+
+```text
+$speckit-bootstrap .         # one-time install/refresh in project
+$speckit-specify             # write/refresh spec
+$speckit-clarify             # clarify requirements
+$speckit-plan                # make implementation plan
+$speckit-checklist           # create requirement quality gate
+$speckit-tasks               # generate task list
+$speckit-analyze             # validate spec/plan/tasks consistency
+$speckit-taskstoissues       # sync tasks to GitHub issues (required for implementation)
+$speckit-implement           # execute tasks
+```
+
+Rules for agents:
+
+- only `speckit-bootstrap` is a shell executable in `~/.local/bin`
+- all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
+- `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/github-issue-canon.md`
 
 ## What It Does
 
