@@ -53,6 +53,16 @@ docs/github-issue-canon.md
 .github/ISSUE_TEMPLATE/
 ```
 
+If a private bootstrap env file exists at:
+
+```text
+~/.codex/secrets/speckit.env
+```
+
+`speckit-bootstrap` also refreshes the project `.env` from it and makes sure
+`.env` is ignored by Git. This is intended for local secrets such as
+`LINEAR_API_KEY`; the secret file itself is never committed.
+
 And global Codex skills should exist under:
 
 ```text
@@ -276,6 +286,8 @@ Environment:
 - `SPECKIT_EXTENSION_CATALOG_URL`: override Yan's extension catalog URL.
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
 - `SPECKIT_LINEAR_SYNC_URL`: fallback ZIP URL for the Linear Sync extension.
+- `SPECKIT_PROJECT_ENV_FILE`: private env file copied into project `.env`.
+  Default: `~/.codex/secrets/speckit.env` when it exists.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
 

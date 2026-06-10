@@ -25,6 +25,10 @@ Environment:
   SPECKIT_EXTENSION_CATALOG_URL
                             Optional catalog URL for Yan's approved Spec Kit
                             extensions. Default: yshishenya/main catalog.
+  SPECKIT_PROJECT_ENV_FILE
+                            Optional private env file copied into project .env.
+                            Default: $HOME/.codex/secrets/speckit.env when it
+                            exists. Secrets are never committed by this script.
 EOF
 }
 
@@ -34,6 +38,8 @@ SKIP_CLI_UPDATE=0
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
 GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/refs/heads/main.zip}"
 LINEAR_SYNC_EXTENSION_URL="${SPECKIT_LINEAR_SYNC_URL:-https://github.com/yshishenya/spec-kit-ext-linear-sync/archive/refs/heads/main.zip}"
+DEFAULT_PROJECT_ENV_FILE="$HOME/.codex/secrets/speckit.env"
+PROJECT_ENV_FILE="${SPECKIT_PROJECT_ENV_FILE:-$DEFAULT_PROJECT_ENV_FILE}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -300,6 +306,60 @@ PY
   echo "speckit-bootstrap: configured safe Spec Kit git auto-commit policy"
 }
 
+sync_project_env() {
+  local source_env="$PROJECT_ENV_FILE"
+  local target_env="$PROJECT_DIR/.env"
+  local gitignore="$PROJECT_DIR/.gitignore"
+
+  [[ -f "$source_env" ]] || return 0
+
+  LINEAR_API_KEY=""
+  # shellcheck disable=SC1090
+  . "$source_env" 2>/dev/null || true
+  [[ -n "${LINEAR_API_KEY:-}" ]] || return 0
+
+  if [[ -f "$target_env" ]]; then
+    LINEAR_API_KEY="$LINEAR_API_KEY" python3 - "$target_env" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+value = os.environ["LINEAR_API_KEY"]
+lines = path.read_text(encoding="utf-8").splitlines()
+out = []
+seen = False
+for line in lines:
+    if line.startswith("LINEAR_API_KEY="):
+        if not seen:
+            out.append(f"LINEAR_API_KEY={value}")
+            seen = True
+        continue
+    out.append(line)
+if not seen:
+    if out and out[-1] != "":
+        out.append("")
+    out.append(f"LINEAR_API_KEY={value}")
+path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+  else
+    umask 077
+    printf 'LINEAR_API_KEY=%s\n' "$LINEAR_API_KEY" > "$target_env"
+  fi
+
+  chmod 600 "$target_env" 2>/dev/null || true
+
+  if ! git -C "$PROJECT_DIR" check-ignore -q .env 2>/dev/null; then
+    touch "$gitignore"
+    if ! grep -Fxq ".env" "$gitignore" 2>/dev/null; then
+      printf '\n.env\n' >> "$gitignore"
+      echo "speckit-bootstrap: added .env to .gitignore"
+    fi
+  fi
+
+  echo "speckit-bootstrap: synced project .env from private env file"
+}
+
 ensure_linear_agent_instructions() {
   local agents="$PROJECT_DIR/AGENTS.md"
 
@@ -452,6 +512,7 @@ if [[ -x ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh
   .specify/extensions/agent-context/scripts/bash/update-agent-context.sh || true
 fi
 ensure_linear_agent_instructions
+sync_project_env
 
 sync_global_skills
 clean_local_skill_duplicates
