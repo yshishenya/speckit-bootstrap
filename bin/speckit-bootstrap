@@ -19,6 +19,9 @@ Environment:
   SPECKIT_GITHUB_ISSUE_CANON_URL
                             Optional ZIP URL for the reusable GitHub Issue
                             Canon extension. Default: yshishenya/main.
+  SPECKIT_LINEAR_SYNC_URL
+                            Optional ZIP URL for the reusable Linear Sync
+                            extension. Default: yshishenya/main.
   SPECKIT_EXTENSION_CATALOG_URL
                             Optional catalog URL for Yan's approved Spec Kit
                             extensions. Default: yshishenya/main catalog.
@@ -30,6 +33,7 @@ KEEP_LOCAL_SKILLS=0
 SKIP_CLI_UPDATE=0
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
 GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/refs/heads/main.zip}"
+LINEAR_SYNC_EXTENSION_URL="${SPECKIT_LINEAR_SYNC_URL:-https://github.com/yshishenya/spec-kit-ext-linear-sync/archive/refs/heads/main.zip}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -436,6 +440,10 @@ ensure_extension_from_url \
   github-issue-canon \
   "$GITHUB_ISSUE_CANON_EXTENSION_URL" \
   ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+ensure_extension_from_url \
+  linear-sync \
+  "$LINEAR_SYNC_EXTENSION_URL" \
+  ".agents/skills/speckit-linear-sync/SKILL.md"
 specify extension update
 
 ensure_agent_context_config

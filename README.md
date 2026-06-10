@@ -4,8 +4,8 @@ Yan's upstream-clean bootstrap wrapper for GitHub Spec Kit + Codex.
 
 The script updates official Spec Kit from `github/spec-kit`, initializes or
 refreshes the current project, installs bundled Spec Kit extensions, installs
-Yan's reusable `github-issue-canon` extension from GitHub, and syncs generated
-Codex skills into `~/.agents/skills`.
+Yan's reusable `github-issue-canon` and `linear-sync` extensions from GitHub,
+and syncs generated Codex skills into `~/.agents/skills`.
 
 No upstream Spec Kit files are patched.
 
@@ -81,6 +81,7 @@ This refreshes:
 - Codex Spec Kit integration files;
 - official `agent-context` and `git` extensions;
 - Yan's `github-issue-canon` extension from GitHub;
+- Yan's `linear-sync` extension from GitHub;
 - generated `speckit-*` skills in `~/.agents/skills`.
 
 Use this before starting a new Spec Kit slice, after upstream Spec Kit updates,
@@ -108,6 +109,8 @@ $speckit-checklist
 $speckit-tasks
 $speckit-analyze
 $speckit-taskstoissues
+$speckit-linear-import
+$speckit-linear-sync
 $speckit-implement
 ```
 
@@ -180,6 +183,8 @@ $speckit-checklist           # create requirement quality gate
 $speckit-tasks               # generate task list
 $speckit-analyze             # validate spec/plan/tasks consistency
 $speckit-taskstoissues       # sync tasks to GitHub issues (required for implementation)
+$speckit-linear-import       # import/match existing Linear issues before creating new ones
+$speckit-linear-sync         # sync tasks and GitHub issues into Linear
 $speckit-implement           # execute tasks
 ```
 
@@ -188,6 +193,8 @@ Rules for agents:
 - only `speckit-bootstrap` is a shell executable in `~/.local/bin`
 - all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
 - `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/github-issue-canon.md`
+- `$speckit-linear-sync` uses Linear for project tracking while `tasks.md` remains the implementation source of truth
+- all GitHub issues, Linear issues, comments, project updates, and sync notes must be written in Russian by default, in simple language
 
 ## What It Does
 
@@ -195,7 +202,9 @@ Rules for agents:
 - initializes or updates project-local `.specify` state;
 - installs the official `agent-context` and `git` extensions;
 - installs `github-issue-canon` from Yan's GitHub extension catalog;
+- installs `linear-sync` from Yan's GitHub extension catalog or fallback URL;
 - registers `$speckit-github-issue-canon-*` skills;
+- registers `$speckit-linear-*` skills;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
 - removes project-local duplicate skills by default.
@@ -232,6 +241,7 @@ The default behavior is not pinned to a local archive.
 - Official Spec Kit is resolved from the latest upstream Git tag by default.
 - `github-issue-canon` is resolved through Yan's extension catalog, whose
   `download_url` tracks the extension repository's `main` branch.
+- `linear-sync` is resolved from Yan's GitHub extension repository by default.
 - `speckit-bootstrap` itself is installed from this repository's `main` branch.
 
 To update everything to the latest default state:
@@ -265,6 +275,7 @@ Environment:
   tag. Can be `main` or any git ref.
 - `SPECKIT_EXTENSION_CATALOG_URL`: override Yan's extension catalog URL.
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
+- `SPECKIT_LINEAR_SYNC_URL`: fallback ZIP URL for the Linear Sync extension.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
 
