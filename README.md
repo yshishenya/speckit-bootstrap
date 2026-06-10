@@ -117,6 +117,44 @@ registered automatically:
 - `before_taskstoissues`: installs/refreshes issue canon files and labels;
 - `after_taskstoissues`: validates open Spec Kit issues against the canon.
 
+## Linear Project Tracking
+
+Bootstrap also keeps Linear operating instructions in `AGENTS.md` when the file
+exists. Linear is treated as the day-to-day project tracker on top of Spec Kit:
+
+- `tasks.md` remains the implementation source of truth.
+- GitHub issues remain the code and PR traceability layer.
+- Linear issues are used for status, priority, cycle, assignee, blockers,
+  relations, project updates, and daily work tracking.
+
+Recommended feature flow:
+
+```text
+$speckit-tasks
+$speckit-taskstoissues
+$speckit-linear-sync
+```
+
+For existing feature work, run import/match mode before creating anything new:
+
+```text
+$speckit-linear-import
+$speckit-linear-sync
+```
+
+Agent rules for Linear and issue text:
+
+- all GitHub issues, Linear issues, comments, project updates, and sync notes
+  must be written in Russian by default;
+- write in simple, plain language that is understandable to non-technical
+  teammates;
+- do not duplicate existing Linear issues; match by feature number, task ID,
+  GitHub issue URL, and title first;
+- when `tasks.md` marks a task as `[X]`, close or move the matching GitHub and
+  Linear issues to done and add a short evidence comment;
+- if Linear says an issue is done but `tasks.md` is still open, verify the work
+  before marking the task complete.
+
 If validation reports old non-canonical issues, normalize them:
 
 ```text

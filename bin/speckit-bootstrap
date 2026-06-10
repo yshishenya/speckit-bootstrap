@@ -296,6 +296,84 @@ PY
   echo "speckit-bootstrap: configured safe Spec Kit git auto-commit policy"
 }
 
+ensure_linear_agent_instructions() {
+  local agents="$PROJECT_DIR/AGENTS.md"
+
+  [[ -f "$agents" ]] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "speckit-bootstrap: python3 not found; skipped Linear agent instructions" >&2
+    return 0
+  fi
+
+  python3 - "$agents" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+
+start = "<!-- SPECKIT LINEAR START -->"
+end = "<!-- SPECKIT LINEAR END -->"
+
+block = f"""{start}
+## Правила работы с Linear
+
+Используй Linear как ежедневную доску проекта для Spec Kit-фич, если доступна
+интеграция Linear или API-ключи.
+
+Обязательный поток:
+
+- После `$speckit-tasks` убедись, что каждая исполняемая задача может быть
+  связана с внешним issue.
+- После `$speckit-taskstoissues` автоматически синхронизируй фичу в Linear через
+  `$speckit-linear-sync` или проектный скрипт синхронизации Linear, если он
+  доступен.
+- Не создавай вручную дубли Linear issues. Сначала импортируй или сопоставь
+  существующие задачи по номеру фичи, task ID, ссылке на GitHub issue и
+  заголовку.
+- `tasks.md` остается источником правды по реализации. Linear используется как
+  рабочая доска для статуса, приоритета, цикла, владельца, комментариев,
+  блокеров и общего трекинга проекта.
+- Когда задача отмечена `[X]` в `tasks.md`, закрой или переведи в Done
+  соответствующие GitHub и Linear issues, затем добавь короткий комментарий с
+  доказательством выполнения.
+- Если Linear показывает задачу как Done, но в `tasks.md` она еще открыта, не
+  отмечай ее выполненной молча. Сначала проверь реализацию и evidence.
+- Используй Linear projects для feature slices, cycles для рабочих периодов,
+  labels для feature/task/area/gate metadata, priorities для срочности user
+  stories, relations для блокировок и comments для коротких статус-апдейтов.
+- Если автоматизация Linear недоступна, зафиксируй отсутствие синхронизации как
+  blocker или follow-up, а не создавай неотслеживаемую работу.
+
+Правила языка и понятности:
+
+- Все GitHub issues, Linear issues, комментарии к issues, комментарии в Linear,
+  project updates и sync notes по умолчанию должны быть написаны на русском.
+- Пиши простым и понятным языком, чтобы текст был ясен не только техническим
+  специалистам, но и обычным участникам проекта.
+- Предпочитай короткие предложения, конкретный результат и понятные критерии
+  приемки.
+- Избегай лишнего жаргона, внутренних сокращений и деталей реализации, если они
+  не нужны исполнителю для безопасной работы.
+- Блокеры объясняй как простые факты: что заблокировано, почему заблокировано и
+  какое точное решение или действие разблокирует работу.
+{end}
+"""
+
+if start in text and end in text:
+    before, rest = text.split(start, 1)
+    _, after = rest.split(end, 1)
+    new_text = before.rstrip() + "\n\n" + block + after
+else:
+    new_text = text.rstrip() + "\n\n" + block + "\n"
+
+path.write_text(new_text, encoding="utf-8")
+PY
+
+  echo "speckit-bootstrap: ensured Linear agent instructions in AGENTS.md"
+}
+
 sync_global_skills() {
   local local_skills="$PROJECT_DIR/.agents/skills"
   local global_skills="$HOME/.agents/skills"
@@ -365,6 +443,7 @@ configure_git_auto_commit
 if [[ -x ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh" ]]; then
   .specify/extensions/agent-context/scripts/bash/update-agent-context.sh || true
 fi
+ensure_linear_agent_instructions
 
 sync_global_skills
 clean_local_skill_duplicates
