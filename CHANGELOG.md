@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] - 2026-06-11
+
+### Fixed
+
+- Extended retired Linear skill cleanup to remove canonical
+  `$speckit-linear-sync-*` skill directories as well as the older
+  `$speckit-linear-*` names.
+
 ## [0.3.0] - 2026-06-11
 
 ### Removed

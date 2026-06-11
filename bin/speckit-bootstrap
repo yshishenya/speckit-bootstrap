@@ -370,10 +370,18 @@ remove_retired_linear_extension() {
     "$PROJECT_DIR/.agents/skills/speckit-linear-import" \
     "$PROJECT_DIR/.agents/skills/speckit-linear-sync" \
     "$PROJECT_DIR/.agents/skills/speckit-linear-validate" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-init" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-import" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-sync" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-validate" \
     "$HOME/.agents/skills/speckit-linear-init" \
     "$HOME/.agents/skills/speckit-linear-import" \
     "$HOME/.agents/skills/speckit-linear-sync" \
-    "$HOME/.agents/skills/speckit-linear-validate"
+    "$HOME/.agents/skills/speckit-linear-validate" \
+    "$HOME/.agents/skills/speckit-linear-sync-init" \
+    "$HOME/.agents/skills/speckit-linear-sync-import" \
+    "$HOME/.agents/skills/speckit-linear-sync-sync" \
+    "$HOME/.agents/skills/speckit-linear-sync-validate"
 }
 
 run_agent_context_update() {
