@@ -491,6 +491,7 @@ run_agent_context_update() {
 
   local specify_bin
   local specify_tool_bin=""
+  local uv_specify_tool_bin="$HOME/.local/share/uv/tools/specify-cli/bin"
   specify_bin="$(command -v specify 2>/dev/null || true)"
   if [[ -n "$specify_bin" ]]; then
     specify_tool_bin="$(cd "$(dirname "$specify_bin")" && pwd)"
@@ -498,6 +499,8 @@ run_agent_context_update() {
 
   if [[ -n "$specify_tool_bin" && -x "$specify_tool_bin/python3" ]]; then
     PATH="$specify_tool_bin:$PATH" "$script" || true
+  elif [[ -x "$uv_specify_tool_bin/python3" ]]; then
+    PATH="$uv_specify_tool_bin:$PATH" "$script" || true
   else
     "$script" || true
   fi
@@ -544,6 +547,28 @@ clean_caches() {
     "$PROJECT_DIR/.specify/workflows/.cache"
 }
 
+ensure_codex_integration() {
+  local status_output
+  status_output="$(specify integration status 2>&1 || true)"
+
+  if printf '%s\n' "$status_output" | grep -Fq "No integration currently installed"; then
+    echo "speckit-bootstrap: installing Codex integration in $PROJECT_DIR"
+    specify integration install codex --integration-options="--skills" --force
+    return
+  fi
+
+  if printf '%s\n' "$status_output" | grep -Fq "Integration 'codex' is not installed"; then
+    echo "speckit-bootstrap: installing Codex integration in $PROJECT_DIR"
+    specify integration install codex --integration-options="--skills" --force
+    return
+  fi
+
+  if ! specify integration upgrade codex --integration-options="--skills" --force; then
+    echo "speckit-bootstrap: Codex integration upgrade failed; trying install"
+    specify integration install codex --integration-options="--skills" --force
+  fi
+}
+
 install_cli
 require_cmd specify
 ensure_user_extension_catalog
@@ -555,7 +580,7 @@ if [[ ! -d ".specify" ]]; then
   specify init --here --integration codex --script sh --branch-numbering sequential --force
 else
   echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
-  specify integration upgrade codex --integration-options="--skills" --force
+  ensure_codex_integration
   specify workflow add speckit
 fi
 

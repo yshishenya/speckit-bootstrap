@@ -8,6 +8,8 @@ All notable changes to this project are documented in this file.
 
 - Run the agent-context update through the `specify-cli` tool Python when
   available, so bootstrap does not depend on system `python3` having PyYAML.
+- Fall back to the uv-managed `specify-cli` Python path when `specify` itself is
+  a wrapper in `~/.local/bin`.
 
 ## [0.2.0] - 2026-06-11
 
