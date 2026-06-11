@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.2] - 2026-06-11
+
+### Added
+
+- Added `BACKLOG.md` with the follow-up to remove temporary Linear cleanup code
+  after old projects and worktrees have been refreshed.
+
+### Changed
+
+- Documented the retired Linear cleanup as a temporary migration step: keep it
+  now to remove installed remnants everywhere, then remove the cleanup code in a
+  later release.
+
 ## [0.3.1] - 2026-06-11
 
 ### Fixed

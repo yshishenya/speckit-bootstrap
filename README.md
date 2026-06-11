@@ -128,6 +128,9 @@ The active tracking model is intentionally simple:
 - Linear is not part of the default flow anymore. Bootstrap removes the retired
   `linear-sync` extension, generated Linear skills, and managed Linear agent
   instructions when it finds them.
+- The Linear cleanup is a temporary migration step. Keep it while old projects
+  are being refreshed; remove the cleanup code later after installed remnants
+  are gone everywhere.
 
 Recommended feature flow:
 
