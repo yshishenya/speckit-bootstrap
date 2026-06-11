@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.3] - 2026-06-11
+
+### Added
+
+- Added a managed GitHub issue instruction block for `AGENTS.md` that preserves
+  the `tasks.md` plus GitHub issue flow independently of retired Linear cleanup.
+- Reaffirmed that GitHub issue titles, bodies, comments, and sync notes should
+  be written in simple Russian by default.
+
 ## [0.3.2] - 2026-06-11
 
 ### Added

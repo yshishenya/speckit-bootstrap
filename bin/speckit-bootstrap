@@ -358,6 +358,53 @@ PY
   echo "speckit-bootstrap: removed retired Linear agent instructions from AGENTS.md"
 }
 
+ensure_github_agent_instructions() {
+  local agents="$PROJECT_DIR/AGENTS.md"
+
+  [[ -f "$agents" ]] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "speckit-bootstrap: python3 not found; skipped GitHub issue instructions" >&2
+    return 0
+  fi
+
+  python3 - "$agents" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8", errors="ignore")
+start = "<!-- SPECKIT GITHUB ISSUE START -->"
+end = "<!-- SPECKIT GITHUB ISSUE END -->"
+block = f"""{start}
+## Правила GitHub issues
+
+- `tasks.md` остается источником правды по реализации.
+- GitHub issues используются как внешний трекер выполнения, review, PR-связей и evidence.
+- Все GitHub issue titles, issue bodies, status comments, closure comments и sync notes по умолчанию пиши на русском.
+- Пиши простым, понятным языком, чтобы текст был ясен не только инженерам, но и обычным участникам проекта.
+- Не создавай дубли GitHub issues. Сначала ищи существующие issue по номеру фичи, task ID, ссылке и заголовку.
+- Когда задача отмечена `[X]` в `tasks.md`, закрывай соответствующий GitHub issue только после проверки evidence и добавляй короткий комментарий с результатом проверки.
+- Если GitHub issue закрыт, но `tasks.md` еще открыт, сначала проверь реализацию и evidence, а не отмечай задачу выполненной молча.
+{end}
+"""
+if start in text and end in text:
+    text = re.sub(
+        r"\n*<!-- SPECKIT GITHUB ISSUE START -->.*?<!-- SPECKIT GITHUB ISSUE END -->\n*",
+        "\n\n" + block + "\n",
+        text,
+        flags=re.S,
+    )
+else:
+    text = text.rstrip() + "\n\n" + block + "\n"
+path.write_text(text, encoding="utf-8")
+PY
+
+  echo "speckit-bootstrap: ensured GitHub issue instructions in AGENTS.md"
+}
+
+
 remove_retired_linear_extension() {
   if extension_installed "linear-sync"; then
     specify extension remove linear-sync --force >/dev/null || true
@@ -496,6 +543,7 @@ configure_git_auto_commit
 run_agent_context_update
 remove_retired_linear_extension
 remove_linear_agent_instructions
+ensure_github_agent_instructions
 scrub_linear_project_env
 
 sync_global_skills
