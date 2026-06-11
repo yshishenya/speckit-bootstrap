@@ -407,6 +407,9 @@ block = f"""{start}
 - Используй Linear projects для feature slices, cycles для рабочих периодов,
   labels для feature/task/area/gate metadata, priorities для срочности user
   stories, relations для блокировок и comments для коротких статус-апдейтов.
+- Называй Linear projects с контекстом продукта и фичи, например
+  `2brain Rec / 013 Federated Auth Foundation`, чтобы задачи разных продуктов
+  не смешивались на одной доске.
 - Если автоматизация Linear недоступна, зафиксируй отсутствие синхронизации как
   blocker или follow-up, а не создавай неотслеживаемую работу.
 

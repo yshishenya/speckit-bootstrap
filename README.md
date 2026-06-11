@@ -139,6 +139,9 @@ exists. Linear is treated as the day-to-day project tracker on top of Spec Kit:
 - GitHub issues remain the code and PR traceability layer.
 - Linear issues are used for status, priority, cycle, assignee, blockers,
   relations, project updates, and daily work tracking.
+- Each substantial Spec Kit feature should map to a Linear Project named with
+  both product and feature context, for example
+  `2brain Rec / 013 Federated Auth Foundation`.
 
 Recommended feature flow:
 
