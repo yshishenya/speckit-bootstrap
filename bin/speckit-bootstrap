@@ -485,6 +485,24 @@ PY
   echo "speckit-bootstrap: ensured Linear agent instructions in AGENTS.md"
 }
 
+run_agent_context_update() {
+  local script="$PROJECT_DIR/.specify/extensions/agent-context/scripts/bash/update-agent-context.sh"
+  [[ -x "$script" ]] || return 0
+
+  local specify_bin
+  local specify_tool_bin=""
+  specify_bin="$(command -v specify 2>/dev/null || true)"
+  if [[ -n "$specify_bin" ]]; then
+    specify_tool_bin="$(cd "$(dirname "$specify_bin")" && pwd)"
+  fi
+
+  if [[ -n "$specify_tool_bin" && -x "$specify_tool_bin/python3" ]]; then
+    PATH="$specify_tool_bin:$PATH" "$script" || true
+  else
+    "$script" || true
+  fi
+}
+
 sync_global_skills() {
   local local_skills="$PROJECT_DIR/.agents/skills"
   local global_skills="$HOME/.agents/skills"
@@ -555,9 +573,7 @@ specify extension update
 
 ensure_agent_context_config
 configure_git_auto_commit
-if [[ -x ".specify/extensions/agent-context/scripts/bash/update-agent-context.sh" ]]; then
-  .specify/extensions/agent-context/scripts/bash/update-agent-context.sh || true
-fi
+run_agent_context_update
 ensure_linear_agent_instructions
 sync_project_env
 

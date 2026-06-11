@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-06-11
+
+### Fixed
+
+- Run the agent-context update through the `specify-cli` tool Python when
+  available, so bootstrap does not depend on system `python3` having PyYAML.
+
 ## [0.2.0] - 2026-06-11
 
 ### Added
