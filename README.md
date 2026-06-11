@@ -60,8 +60,9 @@ If a private bootstrap env file exists at:
 ```
 
 `speckit-bootstrap` also refreshes the project `.env` from it and makes sure
-`.env` is ignored by Git. This is intended for local secrets such as
-`LINEAR_API_KEY`; the secret file itself is never committed.
+`.env` is ignored by Git. This is intended for local Linear settings such as
+`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`, `LINEAR_PRODUCT_NAME`, and
+`LINEAR_PROJECT_TEMPLATE`; the secret file itself is never committed.
 
 And global Codex skills should exist under:
 
