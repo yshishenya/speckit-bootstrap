@@ -19,16 +19,9 @@ Environment:
   SPECKIT_GITHUB_ISSUE_CANON_URL
                             Optional ZIP URL for the reusable GitHub Issue
                             Canon extension. Default: yshishenya/main.
-  SPECKIT_LINEAR_SYNC_URL
-                            Optional ZIP URL for the reusable Linear Sync
-                            extension. Default: yshishenya/main.
   SPECKIT_EXTENSION_CATALOG_URL
                             Optional catalog URL for Yan's approved Spec Kit
                             extensions. Default: yshishenya/main catalog.
-  SPECKIT_PROJECT_ENV_FILE
-                            Optional private env file copied into project .env.
-                            Default: $HOME/.codex/secrets/speckit.env when it
-                            exists. Secrets are never committed by this script.
 EOF
 }
 
@@ -37,9 +30,6 @@ KEEP_LOCAL_SKILLS=0
 SKIP_CLI_UPDATE=0
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
 GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/refs/heads/main.zip}"
-LINEAR_SYNC_EXTENSION_URL="${SPECKIT_LINEAR_SYNC_URL:-https://github.com/yshishenya/spec-kit-ext-linear-sync/archive/refs/heads/main.zip}"
-DEFAULT_PROJECT_ENV_FILE="$HOME/.codex/secrets/speckit.env"
-PROJECT_ENV_FILE="${SPECKIT_PROJECT_ENV_FILE:-$DEFAULT_PROJECT_ENV_FILE}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -306,21 +296,17 @@ PY
   echo "speckit-bootstrap: configured safe Spec Kit git auto-commit policy"
 }
 
-sync_project_env() {
-  local source_env="$PROJECT_ENV_FILE"
+scrub_linear_project_env() {
   local target_env="$PROJECT_DIR/.env"
-  local gitignore="$PROJECT_DIR/.gitignore"
 
-  [[ -f "$source_env" ]] || return 0
+  [[ -f "$target_env" ]] || return 0
 
-  if [[ -f "$target_env" ]]; then
-    python3 - "$source_env" "$target_env" <<'PY'
+  python3 - "$target_env" <<'PY'
 import sys
 from pathlib import Path
 
-source = Path(sys.argv[1])
-target = Path(sys.argv[2])
-allowed = {
+target = Path(sys.argv[1])
+retired = {
     "LINEAR_API_KEY",
     "LINEAR_TEAM_KEY",
     "LINEAR_PRODUCT_NAME",
@@ -328,161 +314,66 @@ allowed = {
     "LINEAR_PROJECT_NAME",
     "SPECKIT_PRODUCT_NAME",
 }
-values = {}
-for raw_line in source.read_text(encoding="utf-8", errors="ignore").splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    key, value = line.split("=", 1)
-    key = key.strip()
-    if key in allowed and value.strip():
-        values[key] = value.strip()
-
-if not values:
-    raise SystemExit(0)
-
-lines = target.read_text(encoding="utf-8").splitlines()
+lines = target.read_text(encoding="utf-8", errors="ignore").splitlines()
 out = []
-seen = set()
 for line in lines:
     if "=" in line:
         key = line.split("=", 1)[0].strip()
-        if key in values:
-            if key not in seen:
-                out.append(f"{key}={values[key]}")
-                seen.add(key)
+        if key in retired:
             continue
     out.append(line)
-missing = [key for key in values if key not in seen]
-if missing:
-    if out and out[-1] != "":
-        out.append("")
-    for key in missing:
-        out.append(f"{key}={values[key]}")
-target.write_text("\n".join(out) + "\n", encoding="utf-8")
+target.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
 PY
-  else
-    python3 - "$source_env" "$target_env" <<'PY'
-import sys
-from pathlib import Path
 
-source = Path(sys.argv[1])
-target = Path(sys.argv[2])
-allowed = {
-    "LINEAR_API_KEY",
-    "LINEAR_TEAM_KEY",
-    "LINEAR_PRODUCT_NAME",
-    "LINEAR_PROJECT_TEMPLATE",
-    "LINEAR_PROJECT_NAME",
-    "SPECKIT_PRODUCT_NAME",
-}
-out = []
-for raw_line in source.read_text(encoding="utf-8", errors="ignore").splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith("#") or "=" not in line:
-        continue
-    key, value = line.split("=", 1)
-    key = key.strip()
-    if key in allowed and value.strip():
-        out.append(f"{key}={value.strip()}")
-if not out:
-    raise SystemExit(0)
-target.write_text("\n".join(out) + "\n", encoding="utf-8")
-PY
-  fi
-
-  chmod 600 "$target_env" 2>/dev/null || true
-
-  if ! git -C "$PROJECT_DIR" check-ignore -q .env 2>/dev/null; then
-    touch "$gitignore"
-    if ! grep -Fxq ".env" "$gitignore" 2>/dev/null; then
-      printf '\n.env\n' >> "$gitignore"
-      echo "speckit-bootstrap: added .env to .gitignore"
-    fi
-  fi
-
-  echo "speckit-bootstrap: synced project .env from private env file"
+  echo "speckit-bootstrap: removed retired Linear env keys from project .env"
 }
 
-ensure_linear_agent_instructions() {
+remove_linear_agent_instructions() {
   local agents="$PROJECT_DIR/AGENTS.md"
 
   [[ -f "$agents" ]] || return 0
 
   if ! command -v python3 >/dev/null 2>&1; then
-    echo "speckit-bootstrap: python3 not found; skipped Linear agent instructions" >&2
+    echo "speckit-bootstrap: python3 not found; skipped Linear instruction cleanup" >&2
     return 0
   fi
 
   python3 - "$agents" <<'PY'
+import re
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-
-start = "<!-- SPECKIT LINEAR START -->"
-end = "<!-- SPECKIT LINEAR END -->"
-
-block = f"""{start}
-## Правила работы с Linear
-
-Используй Linear как ежедневную доску проекта для Spec Kit-фич, если доступна
-интеграция Linear или API-ключи.
-
-Обязательный поток:
-
-- После `$speckit-tasks` убедись, что каждая исполняемая задача может быть
-  связана с внешним issue.
-- После `$speckit-taskstoissues` автоматически синхронизируй фичу в Linear через
-  `$speckit-linear-sync` или проектный скрипт синхронизации Linear, если он
-  доступен.
-- Не создавай вручную дубли Linear issues. Сначала импортируй или сопоставь
-  существующие задачи по номеру фичи, task ID, ссылке на GitHub issue и
-  заголовку.
-- `tasks.md` остается источником правды по реализации. Linear используется как
-  рабочая доска для статуса, приоритета, цикла, владельца, комментариев,
-  блокеров и общего трекинга проекта.
-- Когда задача отмечена `[X]` в `tasks.md`, закрой или переведи в Done
-  соответствующие GitHub и Linear issues, затем добавь короткий комментарий с
-  доказательством выполнения.
-- Если Linear показывает задачу как Done, но в `tasks.md` она еще открыта, не
-  отмечай ее выполненной молча. Сначала проверь реализацию и evidence.
-- Используй Linear projects для feature slices, cycles для рабочих периодов,
-  labels для feature/task/area/gate metadata, priorities для срочности user
-  stories, relations для блокировок и comments для коротких статус-апдейтов.
-- Называй Linear projects с контекстом продукта и фичи, например
-  `2brain Rec / 013 Federated Auth Foundation`, чтобы задачи разных продуктов
-  не смешивались на одной доске.
-- Если автоматизация Linear недоступна, зафиксируй отсутствие синхронизации как
-  blocker или follow-up, а не создавай неотслеживаемую работу.
-
-Правила языка и понятности:
-
-- Все GitHub issues, Linear issues, комментарии к issues, комментарии в Linear,
-  project updates и sync notes по умолчанию должны быть написаны на русском.
-- Пиши простым и понятным языком, чтобы текст был ясен не только техническим
-  специалистам, но и обычным участникам проекта.
-- Предпочитай короткие предложения, конкретный результат и понятные критерии
-  приемки.
-- Избегай лишнего жаргона, внутренних сокращений и деталей реализации, если они
-  не нужны исполнителю для безопасной работы.
-- Блокеры объясняй как простые факты: что заблокировано, почему заблокировано и
-  какое точное решение или действие разблокирует работу.
-{end}
-"""
-
-if start in text and end in text:
-    before, rest = text.split(start, 1)
-    _, after = rest.split(end, 1)
-    new_text = before.rstrip() + "\n\n" + block + after
-else:
-    new_text = text.rstrip() + "\n\n" + block + "\n"
-
-path.write_text(new_text, encoding="utf-8")
+text = path.read_text(encoding="utf-8", errors="ignore")
+new_text = re.sub(
+    r"\n*<!-- SPECKIT LINEAR START -->.*?<!-- SPECKIT LINEAR END -->\n*",
+    "\n\n",
+    text,
+    flags=re.S,
+)
+if new_text != text:
+    path.write_text(new_text.rstrip() + "\n", encoding="utf-8")
 PY
 
-  echo "speckit-bootstrap: ensured Linear agent instructions in AGENTS.md"
+  echo "speckit-bootstrap: removed retired Linear agent instructions from AGENTS.md"
+}
+
+remove_retired_linear_extension() {
+  if extension_installed "linear-sync"; then
+    specify extension remove linear-sync --force >/dev/null || true
+    echo "speckit-bootstrap: removed retired linear-sync extension"
+  fi
+
+  rm -rf \
+    "$PROJECT_DIR/.specify/extensions/linear-sync" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-init" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-import" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-sync" \
+    "$PROJECT_DIR/.agents/skills/speckit-linear-validate" \
+    "$HOME/.agents/skills/speckit-linear-init" \
+    "$HOME/.agents/skills/speckit-linear-import" \
+    "$HOME/.agents/skills/speckit-linear-sync" \
+    "$HOME/.agents/skills/speckit-linear-validate"
 }
 
 run_agent_context_update() {
@@ -590,17 +481,14 @@ ensure_extension_from_url \
   github-issue-canon \
   "$GITHUB_ISSUE_CANON_EXTENSION_URL" \
   ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
-ensure_extension_from_url \
-  linear-sync \
-  "$LINEAR_SYNC_EXTENSION_URL" \
-  ".agents/skills/speckit-linear-sync/SKILL.md"
 specify extension update
 
 ensure_agent_context_config
 configure_git_auto_commit
 run_agent_context_update
-ensure_linear_agent_instructions
-sync_project_env
+remove_retired_linear_extension
+remove_linear_agent_instructions
+scrub_linear_project_env
 
 sync_global_skills
 clean_local_skill_duplicates

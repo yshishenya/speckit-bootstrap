@@ -4,8 +4,8 @@ Yan's upstream-clean bootstrap wrapper for GitHub Spec Kit + Codex.
 
 The script updates official Spec Kit from `github/spec-kit`, initializes or
 refreshes the current project, installs bundled Spec Kit extensions, installs
-Yan's reusable `github-issue-canon` and `linear-sync` extensions from GitHub,
-and syncs generated Codex skills into `~/.agents/skills`.
+Yan's reusable `github-issue-canon` extension from GitHub, removes retired
+Linear sync wiring, and syncs generated Codex skills into `~/.agents/skills`.
 
 No upstream Spec Kit files are patched.
 
@@ -53,17 +53,6 @@ docs/github-issue-canon.md
 .github/ISSUE_TEMPLATE/
 ```
 
-If a private bootstrap env file exists at:
-
-```text
-~/.codex/secrets/speckit.env
-```
-
-`speckit-bootstrap` also refreshes the project `.env` from it and makes sure
-`.env` is ignored by Git. This is intended for local Linear settings such as
-`LINEAR_API_KEY`, `LINEAR_TEAM_KEY`, `LINEAR_PRODUCT_NAME`, and
-`LINEAR_PROJECT_TEMPLATE`; the secret file itself is never committed.
-
 And global Codex skills should exist under:
 
 ```text
@@ -92,7 +81,7 @@ This refreshes:
 - Codex Spec Kit integration files;
 - official `agent-context` and `git` extensions;
 - Yan's `github-issue-canon` extension from GitHub;
-- Yan's `linear-sync` extension from GitHub;
+- removal of retired Linear sync extension/skills/instructions when present;
 - generated `speckit-*` skills in `~/.agents/skills`.
 
 Use this before starting a new Spec Kit slice, after upstream Spec Kit updates,
@@ -120,8 +109,6 @@ $speckit-checklist
 $speckit-tasks
 $speckit-analyze
 $speckit-taskstoissues
-$speckit-linear-import
-$speckit-linear-sync
 $speckit-implement
 ```
 
@@ -131,45 +118,35 @@ registered automatically:
 - `before_taskstoissues`: installs/refreshes issue canon files and labels;
 - `after_taskstoissues`: validates open Spec Kit issues against the canon.
 
-## Linear Project Tracking
+## Project Tracking
 
-Bootstrap also keeps Linear operating instructions in `AGENTS.md` when the file
-exists. Linear is treated as the day-to-day project tracker on top of Spec Kit:
+The active tracking model is intentionally simple:
 
-- `tasks.md` remains the implementation source of truth.
-- GitHub issues remain the code and PR traceability layer.
-- Linear issues are used for status, priority, cycle, assignee, blockers,
-  relations, project updates, and daily work tracking.
-- Each substantial Spec Kit feature should map to a Linear Project named with
-  both product and feature context, for example
-  `2brain Rec / 013 Federated Auth Foundation`.
+- `tasks.md` is the implementation source of truth inside the repo.
+- GitHub issues are the external tracker for execution, review, PR links, and
+  closure evidence.
+- Linear is not part of the default flow anymore. Bootstrap removes the retired
+  `linear-sync` extension, generated Linear skills, and managed Linear agent
+  instructions when it finds them.
 
 Recommended feature flow:
 
 ```text
 $speckit-tasks
 $speckit-taskstoissues
-$speckit-linear-sync
+$speckit-implement
 ```
 
-For existing feature work, run import/match mode before creating anything new:
+Agent rules for GitHub issue text:
 
-```text
-$speckit-linear-import
-$speckit-linear-sync
-```
-
-Agent rules for Linear and issue text:
-
-- all GitHub issues, Linear issues, comments, project updates, and sync notes
-  must be written in Russian by default;
+- all GitHub issues and comments must be written in Russian by default;
 - write in simple, plain language that is understandable to non-technical
   teammates;
-- do not duplicate existing Linear issues; match by feature number, task ID,
-  GitHub issue URL, and title first;
-- when `tasks.md` marks a task as `[X]`, close or move the matching GitHub and
-  Linear issues to done and add a short evidence comment;
-- if Linear says an issue is done but `tasks.md` is still open, verify the work
+- do not duplicate existing GitHub issues; match by feature number, task ID,
+  issue URL, and title first;
+- when `tasks.md` marks a task as `[X]`, close the matching GitHub issue and add
+  a short evidence comment;
+- if a GitHub issue is closed but `tasks.md` is still open, verify the work
   before marking the task complete.
 
 If validation reports old non-canonical issues, normalize them:
@@ -197,8 +174,6 @@ $speckit-checklist           # create requirement quality gate
 $speckit-tasks               # generate task list
 $speckit-analyze             # validate spec/plan/tasks consistency
 $speckit-taskstoissues       # sync tasks to GitHub issues (required for implementation)
-$speckit-linear-import       # import/match existing Linear issues before creating new ones
-$speckit-linear-sync         # sync tasks and GitHub issues into Linear
 $speckit-implement           # execute tasks
 ```
 
@@ -207,8 +182,8 @@ Rules for agents:
 - only `speckit-bootstrap` is a shell executable in `~/.local/bin`
 - all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
 - `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/github-issue-canon.md`
-- `$speckit-linear-sync` uses Linear for project tracking while `tasks.md` remains the implementation source of truth
-- all GitHub issues, Linear issues, comments, project updates, and sync notes must be written in Russian by default, in simple language
+- `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
+- all GitHub issues and comments must be written in Russian by default, in simple language
 
 ## What It Does
 
@@ -216,9 +191,8 @@ Rules for agents:
 - initializes or updates project-local `.specify` state;
 - installs the official `agent-context` and `git` extensions;
 - installs `github-issue-canon` from Yan's GitHub extension catalog;
-- installs `linear-sync` from Yan's GitHub extension catalog or fallback URL;
+- removes retired `linear-sync` extension files and generated skills when present;
 - registers `$speckit-github-issue-canon-*` skills;
-- registers `$speckit-linear-*` skills;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
 - removes project-local duplicate skills by default.
@@ -255,7 +229,6 @@ The default behavior is not pinned to a local archive.
 - Official Spec Kit is resolved from the latest upstream Git tag by default.
 - `github-issue-canon` is resolved through Yan's extension catalog, whose
   `download_url` tracks the extension repository's `main` branch.
-- `linear-sync` is resolved from Yan's GitHub extension repository by default.
 - `speckit-bootstrap` itself is installed from this repository's `main` branch.
 
 To update everything to the latest default state:
@@ -289,9 +262,6 @@ Environment:
   tag. Can be `main` or any git ref.
 - `SPECKIT_EXTENSION_CATALOG_URL`: override Yan's extension catalog URL.
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
-- `SPECKIT_LINEAR_SYNC_URL`: fallback ZIP URL for the Linear Sync extension.
-- `SPECKIT_PROJECT_ENV_FILE`: private env file copied into project `.env`.
-  Default: `~/.codex/secrets/speckit.env` when it exists.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
 
