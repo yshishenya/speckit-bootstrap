@@ -515,6 +515,15 @@ ensure_codex_integration() {
   fi
 }
 
+init_spec_kit_project() {
+  if specify init --here --integration codex --script sh --force; then
+    return
+  fi
+
+  echo "speckit-bootstrap: retrying Spec Kit init with legacy branch numbering option"
+  specify init --here --integration codex --script sh --branch-numbering sequential --force
+}
+
 install_cli
 require_cmd specify
 ensure_user_extension_catalog
@@ -523,7 +532,7 @@ cd "$PROJECT_DIR"
 
 if [[ ! -d ".specify" ]]; then
   echo "speckit-bootstrap: initializing Spec Kit in $PROJECT_DIR"
-  specify init --here --integration codex --script sh --branch-numbering sequential --force
+  init_spec_kit_project
 else
   echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
   ensure_codex_integration

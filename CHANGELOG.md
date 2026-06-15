@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.4] - 2026-06-15
+
+### Fixed
+
+- Fixed fresh project initialization with Spec Kit `v0.10.2`, which removed the
+  `specify init --branch-numbering` option.
+- Added a legacy fallback so older Spec Kit CLI versions can still initialize
+  with the previous branch-numbering argument if needed.
+
 ## [0.3.3] - 2026-06-11
 
 ### Added
