@@ -4,6 +4,8 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-06-18
+
 ### Changed
 
 - Updated bootstrap documentation and managed GitHub issue guidance to point at
