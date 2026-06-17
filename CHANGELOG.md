@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Updated bootstrap documentation and managed GitHub issue guidance to point at
+  `docs/agent-guidance/github-issue-canon.md`.
+
 ## [0.3.5] - 2026-06-17
 
 ### Removed

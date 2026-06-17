@@ -49,7 +49,7 @@ After it finishes, the project should have:
 ```text
 .specify/
 AGENTS.md
-docs/github-issue-canon.md
+docs/agent-guidance/github-issue-canon.md
 .github/ISSUE_TEMPLATE/
 ```
 
@@ -62,7 +62,7 @@ And global Codex skills should exist under:
 For a fresh project, commit the generated baseline after reviewing it:
 
 ```sh
-git add .specify AGENTS.md docs/github-issue-canon.md .github/ISSUE_TEMPLATE
+git add .specify AGENTS.md docs/agent-guidance/github-issue-canon.md .github/ISSUE_TEMPLATE
 git commit -m "chore: bootstrap spec kit"
 ```
 
@@ -177,7 +177,7 @@ Rules for agents:
 
 - only `speckit-bootstrap` is a shell executable in `~/.local/bin`
 - all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
-- `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/github-issue-canon.md`
+- `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/agent-guidance/github-issue-canon.md`
 - `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
 - all GitHub issues and comments must be written in Russian by default, in simple language
 
