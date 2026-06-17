@@ -296,68 +296,6 @@ PY
   echo "speckit-bootstrap: configured safe Spec Kit git auto-commit policy"
 }
 
-scrub_linear_project_env() {
-  local target_env="$PROJECT_DIR/.env"
-
-  [[ -f "$target_env" ]] || return 0
-
-  python3 - "$target_env" <<'PY'
-import sys
-from pathlib import Path
-
-target = Path(sys.argv[1])
-retired = {
-    "LINEAR_API_KEY",
-    "LINEAR_TEAM_KEY",
-    "LINEAR_PRODUCT_NAME",
-    "LINEAR_PROJECT_TEMPLATE",
-    "LINEAR_PROJECT_NAME",
-    "SPECKIT_PRODUCT_NAME",
-}
-lines = target.read_text(encoding="utf-8", errors="ignore").splitlines()
-out = []
-for line in lines:
-    if "=" in line:
-        key = line.split("=", 1)[0].strip()
-        if key in retired:
-            continue
-    out.append(line)
-target.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
-PY
-
-  echo "speckit-bootstrap: removed retired Linear env keys from project .env"
-}
-
-remove_linear_agent_instructions() {
-  local agents="$PROJECT_DIR/AGENTS.md"
-
-  [[ -f "$agents" ]] || return 0
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "speckit-bootstrap: python3 not found; skipped Linear instruction cleanup" >&2
-    return 0
-  fi
-
-  python3 - "$agents" <<'PY'
-import re
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8", errors="ignore")
-new_text = re.sub(
-    r"\n*<!-- SPECKIT LINEAR START -->.*?<!-- SPECKIT LINEAR END -->\n*",
-    "\n\n",
-    text,
-    flags=re.S,
-)
-if new_text != text:
-    path.write_text(new_text.rstrip() + "\n", encoding="utf-8")
-PY
-
-  echo "speckit-bootstrap: removed retired Linear agent instructions from AGENTS.md"
-}
-
 ensure_github_agent_instructions() {
   local agents="$PROJECT_DIR/AGENTS.md"
 
@@ -402,33 +340,6 @@ path.write_text(text, encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: ensured GitHub issue instructions in AGENTS.md"
-}
-
-
-remove_retired_linear_extension() {
-  if extension_installed "linear-sync"; then
-    specify extension remove linear-sync --force >/dev/null || true
-    echo "speckit-bootstrap: removed retired linear-sync extension"
-  fi
-
-  rm -rf \
-    "$PROJECT_DIR/.specify/extensions/linear-sync" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-init" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-import" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-sync" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-validate" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-init" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-import" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-sync" \
-    "$PROJECT_DIR/.agents/skills/speckit-linear-sync-validate" \
-    "$HOME/.agents/skills/speckit-linear-init" \
-    "$HOME/.agents/skills/speckit-linear-import" \
-    "$HOME/.agents/skills/speckit-linear-sync" \
-    "$HOME/.agents/skills/speckit-linear-validate" \
-    "$HOME/.agents/skills/speckit-linear-sync-init" \
-    "$HOME/.agents/skills/speckit-linear-sync-import" \
-    "$HOME/.agents/skills/speckit-linear-sync-sync" \
-    "$HOME/.agents/skills/speckit-linear-sync-validate"
 }
 
 run_agent_context_update() {
@@ -550,10 +461,7 @@ specify extension update
 ensure_agent_context_config
 configure_git_auto_commit
 run_agent_context_update
-remove_retired_linear_extension
-remove_linear_agent_instructions
 ensure_github_agent_instructions
-scrub_linear_project_env
 
 sync_global_skills
 clean_local_skill_duplicates

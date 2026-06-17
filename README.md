@@ -4,8 +4,8 @@ Yan's upstream-clean bootstrap wrapper for GitHub Spec Kit + Codex.
 
 The script updates official Spec Kit from `github/spec-kit`, initializes or
 refreshes the current project, installs bundled Spec Kit extensions, installs
-Yan's reusable `github-issue-canon` extension from GitHub, removes retired
-Linear sync wiring, and syncs generated Codex skills into `~/.agents/skills`.
+Yan's reusable `github-issue-canon` extension from GitHub, and syncs generated
+Codex skills into `~/.agents/skills`.
 
 No upstream Spec Kit files are patched.
 
@@ -81,7 +81,6 @@ This refreshes:
 - Codex Spec Kit integration files;
 - official `agent-context` and `git` extensions;
 - Yan's `github-issue-canon` extension from GitHub;
-- removal of retired Linear sync extension/skills/instructions when present;
 - generated `speckit-*` skills in `~/.agents/skills`.
 
 Use this before starting a new Spec Kit slice, after upstream Spec Kit updates,
@@ -125,12 +124,6 @@ The active tracking model is intentionally simple:
 - `tasks.md` is the implementation source of truth inside the repo.
 - GitHub issues are the external tracker for execution, review, PR links, and
   closure evidence.
-- Linear is not part of the default flow anymore. Bootstrap removes the retired
-  `linear-sync` extension, generated Linear skills, and managed Linear agent
-  instructions when it finds them.
-- The Linear cleanup is a temporary migration step. Keep it while old projects
-  are being refreshed; remove the cleanup code later after installed remnants
-  are gone everywhere.
 
 Recommended feature flow:
 
@@ -194,7 +187,6 @@ Rules for agents:
 - initializes or updates project-local `.specify` state;
 - installs the official `agent-context` and `git` extensions;
 - installs `github-issue-canon` from Yan's GitHub extension catalog;
-- removes retired `linear-sync` extension files and generated skills when present;
 - registers `$speckit-github-issue-canon-*` skills;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;

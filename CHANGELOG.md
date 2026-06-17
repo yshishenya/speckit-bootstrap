@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.5] - 2026-06-17
+
+### Removed
+
+- Removed the temporary retired external tracker cleanup path from the bootstrap
+  wrapper and docs.
+- Removed the follow-up backlog entry for that cleanup now that active projects
+  are expected to keep GitHub issues as the only external tracking surface.
+
 ## [0.3.4] - 2026-06-15
 
 ### Fixed
@@ -16,7 +25,7 @@ All notable changes to this project are documented in this file.
 ### Added
 
 - Added a managed GitHub issue instruction block for `AGENTS.md` that preserves
-  the `tasks.md` plus GitHub issue flow independently of retired Linear cleanup.
+  the `tasks.md` plus GitHub issue flow independently of retired tracker cleanup.
 - Reaffirmed that GitHub issue titles, bodies, comments, and sync notes should
   be written in simple Russian by default.
 
@@ -24,12 +33,12 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Added `BACKLOG.md` with the follow-up to remove temporary Linear cleanup code
+- Added `BACKLOG.md` with the follow-up to remove temporary retired tracker cleanup code
   after old projects and worktrees have been refreshed.
 
 ### Changed
 
-- Documented the retired Linear cleanup as a temporary migration step: keep it
+- Documented the retired external tracker cleanup as a temporary migration step: keep it
   now to remove installed remnants everywhere, then remove the cleanup code in a
   later release.
 
@@ -37,26 +46,25 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
-- Extended retired Linear skill cleanup to remove canonical
-  `$speckit-linear-sync-*` skill directories as well as the older
-  `$speckit-linear-*` names.
+- Extended retired tracker skill cleanup to remove canonical generated skill
+  directories as well as older names.
 
 ## [0.3.0] - 2026-06-11
 
 ### Removed
 
-- Removed Linear from the default Spec Kit tracking flow.
-- Removed automatic installation of the retired `linear-sync` extension.
-- Removed Linear key propagation from private bootstrap env files into project
+- Removed the retired external tracker from the default Spec Kit tracking flow.
+- Removed automatic installation of the retired tracker extension.
+- Removed retired tracker key propagation from private bootstrap env files into project
   `.env` files.
-- Removed generated Linear operating instructions from the active agent flow.
+- Removed generated retired tracker operating instructions from the active agent flow.
 
 ### Changed
 
 - Standardized project tracking on `tasks.md` plus GitHub issues only.
-- Bootstrap now cleans up old `linear-sync` extension files, generated
-  `$speckit-linear-*` skills, managed Linear instruction blocks, and retired
-  Linear env keys when refreshing an existing project.
+- Bootstrap now cleans up old retired tracker extension files, generated
+  skills, managed instruction blocks, and retired env keys when refreshing an
+  existing project.
 - Updated documentation so `$speckit-taskstoissues` is the only external issue
   sync step before implementation.
 
@@ -73,21 +81,21 @@ All notable changes to this project are documented in this file.
 
 ### Added
 
-- Added automatic installation of Yan's `linear-sync` Spec Kit extension.
-- Added generated `AGENTS.md` Linear operating rules.
-- Added Russian plain-language rules for all GitHub issues, Linear issues,
+- Added automatic installation of Yan's retired external tracker Spec Kit extension.
+- Added generated `AGENTS.md` retired tracker operating rules.
+- Added Russian plain-language rules for all GitHub issues, external tracker issues,
   comments, project updates, and sync notes.
-- Added product-prefixed Linear Project guidance, for example
+- Added product-prefixed external tracker project guidance, for example
   `2brain Rec / 013 Federated Auth Foundation`.
 - Added private env sync from `~/.codex/secrets/speckit.env` into project
   `.env`.
-- Added `SPECKIT_LINEAR_SYNC_URL` for overriding the Linear Sync extension ZIP.
+- Added an override URL for the retired external tracker extension ZIP.
 - Added `SPECKIT_PROJECT_ENV_FILE` for overriding the private env source file.
 
 ### Changed
 
-- Updated the recommended Spec Kit flow to include `$speckit-linear-import` and
-  `$speckit-linear-sync` after `$speckit-taskstoissues`.
+- Updated the recommended Spec Kit flow to include retired external tracker
+  import/sync after `$speckit-taskstoissues`.
 
 ### Security
 
