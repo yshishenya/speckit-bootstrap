@@ -164,6 +164,22 @@ Then re-run:
 $speckit-github-issue-canon-validate
 ```
 
+## Release And Versioning
+
+Use one versioning policy per repository and document it in project guidance:
+
+- product apps, deployed services, and release-train bundles use CalVer tags:
+  `vYYYY.MM.DD.N`, where `N` increments for multiple releases on the same day;
+- libraries, CLI tools, reusable Spec Kit extensions, bootstrap wrappers, and
+  dependency-like packages use SemVer tags: `vMAJOR.MINOR.PATCH`;
+- descriptive release postfixes belong in the GitHub Release title, not in the
+  stable tag, for example `v2026.06.18.1 - release-rules`;
+- prerelease suffixes are only for real prereleases:
+  `-alpha.N`, `-beta.N`, or `-rc.N`;
+- every release must have a GitHub Release with Russian release notes,
+  validation evidence, compatibility or migration notes, known limitations, and
+  PR/issue links when available.
+
 ## Agent Quick Reference (concise)
 
 Use this when running Spec Kit from Codex:

@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-18
+
+### Added
+
+- Added release/versioning guidance for bootstrapped projects: product apps and
+  services use CalVer `vYYYY.MM.DD.N`, reusable tooling uses SemVer
+  `vMAJOR.MINOR.PATCH`, and human-readable release postfixes belong in GitHub
+  Release titles rather than stable tags.
+
 ## [0.4.0] - 2026-06-18
 
 ### Changed
