@@ -124,6 +124,8 @@ The active tracking model is intentionally simple:
 - `tasks.md` is the implementation source of truth inside the repo.
 - GitHub issues are the external tracker for execution, review, PR links, and
   closure evidence.
+- GitHub pull request templates capture the Russian PR summary, validation
+  evidence, issue links, and closeout checklist.
 
 Recommended feature flow:
 
@@ -135,13 +137,18 @@ $speckit-implement
 
 Agent rules for GitHub issue text:
 
-- all GitHub issues and comments must be written in Russian by default;
+- all GitHub issues, PR descriptions, comments, closure comments, and sync notes
+  must be written in Russian by default;
 - write in simple, plain language that is understandable to non-technical
   teammates;
 - do not duplicate existing GitHub issues; match by feature number, task ID,
   issue URL, and title first;
 - when `tasks.md` marks a task as `[X]`, close the matching GitHub issue and add
-  a short evidence comment;
+  a detailed Russian closure comment explaining what changed, why it matters,
+  how it was checked, what is out of scope, and which PR and Spec Kit task it
+  closes;
+- use `Fixes #...`, `Closes #...`, or `Resolves #...` only when the PR fully
+  closes the issue; use `Refs #...` or `Part of #...` for partial work;
 - if a GitHub issue is closed but `tasks.md` is still open, verify the work
   before marking the task complete.
 
@@ -179,7 +186,7 @@ Rules for agents:
 - all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
 - `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/agent-guidance/github-issue-canon.md`
 - `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
-- all GitHub issues and comments must be written in Russian by default, in simple language
+- all GitHub issues, PR descriptions, and comments must be written in Russian by default, in simple language
 
 ## What It Does
 
