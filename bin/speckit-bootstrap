@@ -344,6 +344,54 @@ PY
   echo "speckit-bootstrap: ensured GitHub issue instructions in AGENTS.md"
 }
 
+ensure_release_versioning_instructions() {
+  local agents="$PROJECT_DIR/AGENTS.md"
+
+  [[ -f "$agents" ]] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "speckit-bootstrap: python3 not found; skipped release/versioning instructions" >&2
+    return 0
+  fi
+
+  python3 - "$agents" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8", errors="ignore")
+start = "<!-- SPECKIT RELEASE VERSIONING START -->"
+end = "<!-- SPECKIT RELEASE VERSIONING END -->"
+block = f"""{start}
+## Правила релизов и версий
+
+- Каждый релиз должен иметь tag, GitHub Release и понятный русский changelog/release notes.
+- Product apps, deployed services и release-train bundles версионируй через CalVer: `vYYYY.MM.DD.N`.
+- Libraries, CLI tools, reusable Spec Kit extensions и bootstrap wrappers версионируй через SemVer: `vMAJOR.MINOR.PATCH`.
+- Человекочитаемый postfix релиза пиши в GitHub Release title, не в stable tag: например `v2026.06.18.1 - release-rules`.
+- Prerelease suffix используй только для настоящих prerelease: `-alpha.N`, `-beta.N`, `-rc.N`.
+- Release notes должны быть на русском и содержать: что изменилось, validation evidence, compatibility/migration impact, known limitations и ссылки на PR/issues.
+{end}
+"""
+if start in text and end in text:
+    text = re.sub(
+        r"\n*<!-- SPECKIT RELEASE VERSIONING START -->.*?<!-- SPECKIT RELEASE VERSIONING END -->\n*",
+        "\n\n" + block + "\n",
+        text,
+        flags=re.S,
+    )
+elif "## Правила релизов и версий" in text:
+    path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    raise SystemExit(0)
+else:
+    text = text.rstrip() + "\n\n" + block + "\n"
+path.write_text(text, encoding="utf-8")
+PY
+
+  echo "speckit-bootstrap: ensured release/versioning instructions in AGENTS.md"
+}
+
 run_agent_context_update() {
   local script="$PROJECT_DIR/.specify/extensions/agent-context/scripts/bash/update-agent-context.sh"
   [[ -x "$script" ]] || return 0
@@ -464,6 +512,7 @@ ensure_agent_context_config
 configure_git_auto_commit
 run_agent_context_update
 ensure_github_agent_instructions
+ensure_release_versioning_instructions
 
 sync_global_skills
 clean_local_skill_duplicates
