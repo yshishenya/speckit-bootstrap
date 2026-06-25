@@ -4,6 +4,21 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-25
+
+### Added
+
+- Added Ponytail bootstrap integration: `speckit-bootstrap` now installs or
+  updates the `DietrichGebert/ponytail` Codex plugin through Codex's plugin
+  manager, refreshes a managed Ponytail guidance block in `AGENTS.md`, and
+  keeps Ponytail-owned hooks/skills out of this repository.
+- Added `--skip-ponytail` plus `SPECKIT_PONYTAIL=0` for environments that
+  should not install plugins.
+- Added generated Ponytail upstream guidance sync:
+  `docs/agent-guidance/ponytail-upstream.md` is refreshed from Ponytail's
+  upstream `AGENTS.md`, while the root `AGENTS.md` only links to it from the
+  managed Spec Kit Ponytail block.
+
 ## [0.4.1] - 2026-06-18
 
 ### Added

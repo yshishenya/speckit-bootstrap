@@ -12,23 +12,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if command -v curl >/dev/null 2>&1; then
-  curl -fsSL "$BOOTSTRAP_URL" -o "$tmp"
-elif command -v python3 >/dev/null 2>&1; then
-  python3 - "$BOOTSTRAP_URL" "$tmp" <<'PY'
-import sys
-import urllib.request
-
-url, path = sys.argv[1], sys.argv[2]
-with urllib.request.urlopen(url, timeout=30) as response:
-    data = response.read()
-open(path, "wb").write(data)
-PY
-else
-  echo "install.sh: curl or python3 is required" >&2
+if ! command -v curl >/dev/null 2>&1; then
+  echo "install.sh: curl is required" >&2
   exit 1
 fi
 
+curl -fsSL "$BOOTSTRAP_URL" -o "$tmp"
 install -m 0755 "$tmp" "$INSTALL_DIR/speckit-bootstrap"
 
 echo "speckit-bootstrap installed to $INSTALL_DIR/speckit-bootstrap"
