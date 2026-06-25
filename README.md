@@ -5,7 +5,8 @@ Yan's upstream-clean bootstrap wrapper for GitHub Spec Kit + Codex.
 The script updates official Spec Kit from `github/spec-kit`, initializes or
 refreshes the current project, installs bundled Spec Kit extensions, installs
 Yan's reusable `github-issue-canon` extension from GitHub, and syncs generated
-Codex skills into `~/.agents/skills`.
+Codex skills into `~/.agents/skills`. It also installs/updates the Ponytail
+Codex plugin and project guidance.
 
 No upstream Spec Kit files are patched.
 
@@ -50,6 +51,7 @@ After it finishes, the project should have:
 .specify/
 AGENTS.md
 docs/agent-guidance/github-issue-canon.md
+docs/agent-guidance/ponytail-upstream.md
 .github/ISSUE_TEMPLATE/
 ```
 
@@ -62,7 +64,7 @@ And global Codex skills should exist under:
 For a fresh project, commit the generated baseline after reviewing it:
 
 ```sh
-git add .specify AGENTS.md docs/agent-guidance/github-issue-canon.md .github/ISSUE_TEMPLATE
+git add .specify AGENTS.md docs/agent-guidance .github/ISSUE_TEMPLATE
 git commit -m "chore: bootstrap spec kit"
 ```
 
@@ -81,7 +83,10 @@ This refreshes:
 - Codex Spec Kit integration files;
 - official `agent-context` and `git` extensions;
 - Yan's `github-issue-canon` extension from GitHub;
-- generated `speckit-*` skills in `~/.agents/skills`.
+- generated `speckit-*` skills in `~/.agents/skills`;
+- the Ponytail Codex plugin via Codex's plugin marketplace;
+- Ponytail's upstream `AGENTS.md` fallback in
+  `docs/agent-guidance/ponytail-upstream.md`.
 
 Use this before starting a new Spec Kit slice, after upstream Spec Kit updates,
 or when you want to refresh the shared issue-canon automation.
@@ -203,6 +208,8 @@ Rules for agents:
 - `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/agent-guidance/github-issue-canon.md`
 - `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
 - all GitHub issues, PR descriptions, and comments must be written in Russian by default, in simple language
+- Ponytail controls implementation shape, not Spec Kit completeness: do not
+  shorten specs, plans, task sync, evidence, release notes, or closeout.
 
 ## What It Does
 
@@ -211,9 +218,29 @@ Rules for agents:
 - installs the official `agent-context` and `git` extensions;
 - installs `github-issue-canon` from Yan's GitHub extension catalog;
 - registers `$speckit-github-issue-canon-*` skills;
+- installs/updates the Ponytail Codex plugin through `codex plugin`;
+- adds a managed Ponytail-in-Spec-Kit block to `AGENTS.md`;
+- refreshes Ponytail's upstream `AGENTS.md` fallback into
+  `docs/agent-guidance/ponytail-upstream.md`;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
 - removes project-local duplicate skills by default.
+
+## Ponytail Integration
+
+Bootstrap keeps Ponytail owned by Codex's plugin manager: it upgrades or adds
+`DietrichGebert/ponytail`, runs `codex plugin add ponytail@ponytail`, refreshes
+`docs/agent-guidance/ponytail-upstream.md`, and updates the root `AGENTS.md`
+managed block. It does not vendor Ponytail hooks or skills into this repository.
+
+After the first install or any Ponytail update, review hooks in Codex:
+
+```text
+/hooks
+```
+
+Ponytail controls implementation shape, not Spec Kit completeness: do not
+shorten specs, plans, task sync, validation evidence, release notes, or closeout.
 
 ## Git Auto-Commit Defaults
 
@@ -247,6 +274,8 @@ The default behavior is not pinned to a local archive.
 - Official Spec Kit is resolved from the latest upstream Git tag by default.
 - `github-issue-canon` is resolved through Yan's extension catalog, whose
   `download_url` tracks the extension repository's `main` branch.
+- Ponytail is updated through the Codex plugin marketplace from
+  `DietrichGebert/ponytail`.
 - `speckit-bootstrap` itself is installed from this repository's `main` branch.
 
 To update everything to the latest default state:
@@ -271,7 +300,7 @@ SPEC_KIT_VERSION=main speckit-bootstrap .
 ## Options
 
 ```text
-speckit-bootstrap [PROJECT_DIR] [--keep-local-skills] [--skip-cli-update]
+speckit-bootstrap [PROJECT_DIR] [--keep-local-skills] [--skip-cli-update] [--skip-ponytail]
 ```
 
 Environment:
@@ -280,6 +309,7 @@ Environment:
   tag. Can be `main` or any git ref.
 - `SPECKIT_EXTENSION_CATALOG_URL`: override Yan's extension catalog URL.
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
+- `SPECKIT_PONYTAIL`: set to `0`, `false`, `no`, or `off` to skip Ponytail.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
 
@@ -291,6 +321,9 @@ speckit-bootstrap . --skip-cli-update
 
 # Keep project-local generated skills instead of only syncing global skills
 speckit-bootstrap . --keep-local-skills
+
+# Skip Ponytail plugin updates and AGENTS.md Ponytail guidance
+speckit-bootstrap . --skip-ponytail
 
 # Use official Spec Kit main instead of the latest release tag
 SPEC_KIT_VERSION=main speckit-bootstrap .
@@ -304,6 +337,8 @@ After bootstrap, run:
 specify self check
 specify extension list
 ls ~/.agents/skills | grep speckit
+codex plugin list --json --available | grep ponytail
+test -f docs/agent-guidance/ponytail-upstream.md
 ```
 
 For the issue canon extension:
