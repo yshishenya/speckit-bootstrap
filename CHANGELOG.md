@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [0.5.1] - 2026-06-26
+
 ### Changed
 
 - Updated managed Ponytail-in-Spec-Kit guidance to be risk-lane aware:
