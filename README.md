@@ -103,7 +103,10 @@ Or from anywhere:
 speckit-bootstrap /path/to/project
 ```
 
-Then use the normal Spec Kit skill flow in Codex (repo convention here uses `$`-prefixed skill names):
+If the project defines risk/validation lanes in `AGENTS.md` or
+`docs/agent-guidance/spec-kit-flow.md`, choose that lane before starting work.
+For tracked Spec Kit feature slices, use the normal Spec Kit skill flow in Codex
+(repo convention here uses `$`-prefixed skill names):
 
 ```text
 $speckit-specify
@@ -197,7 +200,7 @@ $speckit-plan                # make implementation plan
 $speckit-checklist           # create requirement quality gate
 $speckit-tasks               # generate task list
 $speckit-analyze             # validate spec/plan/tasks consistency
-$speckit-taskstoissues       # sync tasks to GitHub issues (required for implementation)
+$speckit-taskstoissues       # sync tracked feature tasks to GitHub issues
 $speckit-implement           # execute tasks
 ```
 
@@ -205,11 +208,14 @@ Rules for agents:
 
 - only `speckit-bootstrap` is a shell executable in `~/.local/bin`
 - all other Spec Kit entrypoints are Codex skills (`$speckit-*`)
-- `$speckit-taskstoissues` requires a GitHub remote and active tasks; issue format is governed by `docs/agent-guidance/github-issue-canon.md`
+- `$speckit-taskstoissues` requires a GitHub remote and active tasks; use it for
+  tracked Spec Kit feature slices, not read-only/docs-only/tiny direct lanes
+- issue format is governed by `docs/agent-guidance/github-issue-canon.md`
 - `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
 - all GitHub issues, PR descriptions, and comments must be written in Russian by default, in simple language
-- Ponytail controls implementation shape, not Spec Kit completeness: do not
-  shorten specs, plans, task sync, evidence, release notes, or closeout.
+- Ponytail controls implementation shape, not the selected risk/validation lane:
+  low-risk lanes can stay scoped, while significant/high-risk lanes keep specs,
+  plans, task sync, evidence, release notes, and closeout.
 
 ## What It Does
 
@@ -222,6 +228,8 @@ Rules for agents:
 - adds a managed Ponytail-in-Spec-Kit block to `AGENTS.md`;
 - refreshes Ponytail's upstream `AGENTS.md` fallback into
   `docs/agent-guidance/ponytail-upstream.md`;
+- preserves project-owned risk/validation lane prompts in Spec Kit plan/tasks
+  templates when a project uses that policy;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
 - removes project-local duplicate skills by default.
@@ -239,8 +247,9 @@ After the first install or any Ponytail update, review hooks in Codex:
 /hooks
 ```
 
-Ponytail controls implementation shape, not Spec Kit completeness: do not
-shorten specs, plans, task sync, validation evidence, release notes, or closeout.
+Ponytail controls implementation shape, not the selected risk/validation lane:
+low-risk lanes can stay scoped, while significant/high-risk lanes keep specs,
+plans, task sync, validation evidence, release notes, and closeout.
 
 ## Git Auto-Commit Defaults
 

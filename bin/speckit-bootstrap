@@ -456,6 +456,77 @@ PY
   echo "speckit-bootstrap: ensured release/versioning instructions in AGENTS.md"
 }
 
+ensure_risk_lane_templates() {
+  local templates="$PROJECT_DIR/.specify/templates"
+  [[ -d "$templates" ]] || return 0
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "speckit-bootstrap: python3 not found; skipped risk-lane template guidance" >&2
+    return 0
+  fi
+
+  python3 - "$templates" <<'PY'
+import sys
+from pathlib import Path
+
+templates = Path(sys.argv[1])
+
+plan = templates / "plan-template.md"
+if plan.exists():
+    text = plan.read_text(encoding="utf-8")
+    if "**Risk / Validation Lane**:" not in text:
+        text = text.replace(
+            "**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]\n",
+            "**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]\n\n"
+            "**Risk / Validation Lane**: [read-only / docs-only / tiny-low-risk-code / active-spec-slice / significant-feature / high-risk-feature / release-deploy, with rationale]\n\n"
+            "**Release Gate**: [no deploy / cd dry-run / cd execute, with rationale]\n",
+        )
+    if "## Validation Plan" not in text:
+        text = text.replace(
+            "[Gates determined based on constitution file]\n",
+            "[Gates determined based on constitution file]\n\n"
+            "## Validation Plan\n\n"
+            "[Name the focused checks, quickstart scenarios, repository gate, and deploy gate\n"
+            "required by the selected lane. Explain why broader gates are not required when\n"
+            "the lane is low risk.]\n",
+        )
+    plan.write_text(text, encoding="utf-8")
+
+tasks = templates / "tasks-template.md"
+if tasks.exists():
+    text = tasks.read_text(encoding="utf-8")
+    text = text.replace(
+        "**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.",
+        "**Tests**: The examples below include test tasks. Include tests when explicitly\n"
+        "requested in the feature specification or when the selected risk/validation lane\n"
+        "requires them.",
+    )
+    text = text.replace(
+        "### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️",
+        "### Tests for User Story 1 (if requested or lane-required) ⚠️",
+    )
+    text = text.replace(
+        "### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️",
+        "### Tests for User Story 2 (if requested or lane-required) ⚠️",
+    )
+    text = text.replace(
+        "### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️",
+        "### Tests for User Story 3 (if requested or lane-required) ⚠️",
+    )
+    text = text.replace(
+        "- [ ] TXXX Run quickstart.md validation",
+        "- [ ] TXXX Record the selected risk/validation lane and run the matching plan.md/quickstart.md checks",
+    )
+    text = text.replace(
+        "- [ ] TXXX Record the selected validation lane and run the matching plan.md/quickstart.md checks",
+        "- [ ] TXXX Record the selected risk/validation lane and run the matching plan.md/quickstart.md checks",
+    )
+    tasks.write_text(text, encoding="utf-8")
+PY
+
+  echo "speckit-bootstrap: ensured risk-lane guidance in Spec Kit templates"
+}
+
 ensure_ponytail_agent_instructions() {
   [[ "$SKIP_PONYTAIL" -eq 0 ]] || return 0
 
@@ -484,7 +555,7 @@ block = f"""{start}
 ## Ponytail в Spec Kit
 
 - Ponytail управляет формой реализации: меньше кода, меньше новых зависимостей, reuse/stdlib/native-first, минимальный рабочий diff.
-- Ponytail не сокращает Spec Kit процесс: specs, plan, checklists, tasks, analyze, taskstoissues, GitHub issues, PR evidence, release notes и closeout остаются обязательными.
+- Ponytail не снижает выбранный risk/validation lane: low-risk lanes остаются scoped, а significant/high-risk lanes сохраняют specs, plan, checklists, tasks, analyze, taskstoissues, GitHub issues, PR evidence, release notes и closeout.
 - Реальное поведение Ponytail приходит из установленного Codex plugin; этот блок описывает только границы применения внутри Spec Kit.
 {upstream_line}{fallback_line}- На этапе реализации применяй Ponytail ladder после чтения реального потока: не строить лишнее, искать существующий helper/pattern, использовать stdlib/native, писать минимум кода, но сохранять security, accessibility, trust-boundary validation и проверки.
 - Для сложного diff перед PR/merge запускай `@ponytail-review` и убирай найденное переусложнение, если это не ломает требования и evidence.
@@ -625,6 +696,7 @@ specify extension update
 
 ensure_agent_context_config
 configure_git_auto_commit
+ensure_risk_lane_templates
 run_agent_context_update
 ensure_github_agent_instructions
 ensure_release_versioning_instructions

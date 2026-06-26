@@ -4,6 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated managed Ponytail-in-Spec-Kit guidance to be risk-lane aware:
+  Ponytail must not weaken the selected risk/validation lane, while low-risk
+  lanes can remain scoped and significant/high-risk lanes keep full Spec Kit
+  evidence.
+- Clarified README guidance so `$speckit-taskstoissues` is required for tracked
+  Spec Kit feature slices, not for read-only, docs-only, or tiny low-risk direct
+  changes.
+
 ## [0.5.0] - 2026-06-25
 
 ### Added
