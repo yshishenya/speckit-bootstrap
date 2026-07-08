@@ -149,6 +149,11 @@ Agent rules for GitHub issue text:
   must be written in Russian by default;
 - write in simple, plain language that is understandable to non-technical
   teammates;
+- Spec Kit task-backed GitHub issue titles must use one shape:
+  `[<feature>][<priority>][<area>] T###: <русский результат>`;
+- bare `T###: ...` titles are fallback-only for repositories without the
+  project canon and should not be used after bootstrap installs
+  `github-issue-canon`;
 - do not duplicate existing GitHub issues; match by feature number, task ID,
   issue URL, and title first;
 - when `tasks.md` marks a task as `[X]`, close the matching GitHub issue and add
@@ -211,6 +216,8 @@ Rules for agents:
 - `$speckit-taskstoissues` requires a GitHub remote and active tasks; use it for
   tracked Spec Kit feature slices, not read-only/docs-only/tiny direct lanes
 - issue format is governed by `docs/agent-guidance/github-issue-canon.md`
+- Spec Kit task-backed issue titles use
+  `[<feature>][<priority>][<area>] T###: <русский результат>`
 - `tasks.md` remains the implementation source of truth; GitHub issues are the external tracker
 - all GitHub issues, PR descriptions, and comments must be written in Russian by default, in simple language
 - Ponytail controls implementation shape, not the selected risk/validation lane:
@@ -232,7 +239,8 @@ Rules for agents:
   templates when a project uses that policy;
 - configures safe Spec Kit git auto-commit defaults for documentation stages;
 - syncs generated `speckit-*` skills to `~/.agents/skills`;
-- removes project-local duplicate skills by default.
+- removes project-local duplicate skills by default;
+- hides refresh-only Spec Kit install metadata from normal `git diff`.
 
 ## Ponytail Integration
 
@@ -306,6 +314,36 @@ For bleeding-edge official Spec Kit, set:
 SPEC_KIT_VERSION=main speckit-bootstrap .
 ```
 
+## Git Diff Hygiene
+
+On an existing Spec Kit project, upstream refreshes may rewrite version and
+manifest files such as:
+
+```text
+.specify/init-options.json
+.specify/integration.json
+.specify/integrations/*.manifest.json
+.specify/extensions/.registry
+.specify/workflows/workflow-registry.json
+```
+
+Those files describe the local install state, not project behavior. By default
+`speckit-bootstrap` marks that volatile metadata as `skip-worktree` after a
+refresh so routine updates do not leave a noisy git diff.
+
+Real project changes still remain visible, including `AGENTS.md`,
+`docs/agent-guidance/`, `.specify/templates/`, extension files, specs, plans,
+tasks, source code, and tests.
+
+For a release or audit where you want to see and commit metadata drift too:
+
+```sh
+SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
+```
+
+For a brand-new project, the first bootstrap still creates files that should be
+reviewed and committed as the initial Spec Kit baseline.
+
 ## Options
 
 ```text
@@ -318,6 +356,8 @@ Environment:
   tag. Can be `main` or any git ref.
 - `SPECKIT_EXTENSION_CATALOG_URL`: override Yan's extension catalog URL.
 - `SPECKIT_GITHUB_ISSUE_CANON_URL`: fallback ZIP URL if catalog install fails.
+- `SPECKIT_TRACK_INSTALL_METADATA`: set to `1` to keep Spec Kit install/version
+  metadata visible in git instead of marking it `skip-worktree`.
 - `SPECKIT_PONYTAIL`: set to `0`, `false`, `no`, or `off` to skip Ponytail.
 - `SPECKIT_BOOTSTRAP_INSTALL_DIR`: installer target, default `~/.local/bin`.
 - `SPECKIT_BOOTSTRAP_URL`: installer source URL.
@@ -336,6 +376,9 @@ speckit-bootstrap . --skip-ponytail
 
 # Use official Spec Kit main instead of the latest release tag
 SPEC_KIT_VERSION=main speckit-bootstrap .
+
+# Show refresh-only Spec Kit metadata changes in git
+SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 ```
 
 ## Verification

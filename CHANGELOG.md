@@ -6,6 +6,25 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.5.2] - 2026-07-08
+
+### Changed
+
+- Bootstrap now uses `SPECIFY_INIT_DIR` when running official Spec Kit init so
+  newer Spec Kit project resolution stays explicit.
+- Managed `AGENTS.md` blocks are normalized to a single trailing newline so
+  repeated refreshes do not create blank-line-only diffs.
+- Managed GitHub issue guidance now states the same Spec Kit task-backed title
+  canon as the reusable extension:
+  `[<feature>][<priority>][<area>] T###: <русский результат>`.
+
+### Added
+
+- Added git diff hygiene for existing projects: refresh-only Spec Kit install
+  metadata is marked `skip-worktree` by default, with
+  `SPECKIT_TRACK_INSTALL_METADATA=1` available for release/audit runs that need
+  to inspect metadata drift.
+
 ## [0.5.1] - 2026-06-26
 
 ### Changed

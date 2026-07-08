@@ -23,6 +23,9 @@ Environment:
   SPECKIT_EXTENSION_CATALOG_URL
                             Optional catalog URL for Yan's approved Spec Kit
                             extensions. Default: yshishenya/main catalog.
+  SPECKIT_TRACK_INSTALL_METADATA=1
+                            Keep Spec Kit install/version metadata visible in git.
+                            Default: hide refresh-only metadata with skip-worktree.
   SPECKIT_PONYTAIL=0        Skip Ponytail plugin and AGENTS.md guidance.
 EOF
 }
@@ -36,6 +39,7 @@ GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://gith
 PONYTAIL_UPSTREAM_AGENTS_URL="https://raw.githubusercontent.com/DietrichGebert/ponytail/main/AGENTS.md"
 PONYTAIL_UPSTREAM_AGENTS_PATH="docs/agent-guidance/ponytail-upstream.md"
 PONYTAIL_UPSTREAM_AGENTS_STATUS="skipped"
+TRACK_INSTALL_METADATA="${SPECKIT_TRACK_INSTALL_METADATA:-0}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -387,6 +391,8 @@ block = f"""{start}
 - Canon: `docs/agent-guidance/github-issue-canon.md`.
 - Все GitHub issue titles, issue bodies, PR descriptions, status comments, closure comments и sync notes по умолчанию пиши на русском.
 - Пиши простым, понятным языком, чтобы текст был ясен не только инженерам, но и обычным участникам проекта.
+- Для Spec Kit task-backed issues используй ровно один title format: `[<feature>][<priority>][<area>] T###: <русский результат>`.
+- Не используй bare `T###: ...` titles в bootstrapped repositories с `github-issue-canon`; это fallback только для репозиториев без project canon.
 - Не создавай дубли GitHub issues. Сначала ищи существующие issue по номеру фичи, task ID, ссылке и заголовку.
 - В PR используй `Fixes #...`, `Closes #...` или `Resolves #...` только для issues, которые PR закрывает полностью; для частичной связи используй `Refs #...` или `Part of #...`.
 - Когда задача отмечена `[X]` в `tasks.md`, закрывай соответствующий GitHub issue только после проверки evidence и добавляй подробный понятный closure comment: что закрыто, почему важно, как проверено, что не входит, какой PR и task закрыты.
@@ -402,7 +408,7 @@ if start in text and end in text:
     )
 else:
     text = text.rstrip() + "\n\n" + block + "\n"
-path.write_text(text, encoding="utf-8")
+path.write_text(text.rstrip() + "\n", encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: ensured GitHub issue instructions in AGENTS.md"
@@ -450,7 +456,7 @@ elif "## Правила релизов и версий" in text:
     raise SystemExit(0)
 else:
     text = text.rstrip() + "\n\n" + block + "\n"
-path.write_text(text, encoding="utf-8")
+path.write_text(text.rstrip() + "\n", encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: ensured release/versioning instructions in AGENTS.md"
@@ -572,7 +578,7 @@ if start in text and end in text:
     )
 else:
     text = text.rstrip() + "\n\n" + block + "\n"
-path.write_text(text, encoding="utf-8")
+path.write_text(text.rstrip() + "\n", encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: ensured Ponytail instructions in AGENTS.md"
@@ -640,6 +646,30 @@ clean_caches() {
     "$PROJECT_DIR/.specify/workflows/.cache"
 }
 
+hide_install_metadata_diffs() {
+  [[ "$TRACK_INSTALL_METADATA" != "1" ]] || return 0
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+  local file marked=0
+  for file in \
+    ".specify/init-options.json" \
+    ".specify/integration.json" \
+    ".specify/integrations/speckit.manifest.json" \
+    ".specify/integrations/codex.manifest.json" \
+    ".specify/extensions/.registry" \
+    ".specify/workflows/workflow-registry.json"
+  do
+    if git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+      git update-index --skip-worktree "$file"
+      marked=1
+    fi
+  done
+
+  if [[ "$marked" -eq 1 ]]; then
+    echo "speckit-bootstrap: hid refresh-only Spec Kit install metadata from git diff"
+  fi
+}
+
 ensure_codex_integration() {
   local status_output
   status_output="$(specify integration status 2>&1 || true)"
@@ -663,12 +693,12 @@ ensure_codex_integration() {
 }
 
 init_spec_kit_project() {
-  if specify init --here --integration codex --script sh --force; then
+  if SPECIFY_INIT_DIR="$PROJECT_DIR" specify init --here --integration codex --script sh --force; then
     return
   fi
 
   echo "speckit-bootstrap: retrying Spec Kit init with legacy branch numbering option"
-  specify init --here --integration codex --script sh --branch-numbering sequential --force
+  SPECIFY_INIT_DIR="$PROJECT_DIR" specify init --here --integration codex --script sh --branch-numbering sequential --force
 }
 
 install_cli
@@ -706,6 +736,7 @@ ensure_ponytail_agent_instructions
 sync_global_skills
 clean_local_skill_duplicates
 clean_caches
+hide_install_metadata_diffs
 
 specify self check
 
