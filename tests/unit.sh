@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.6.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.6.1" ]]
 }
 
 test_catalog_merge_is_additive_and_idempotent() (
@@ -208,7 +208,7 @@ sha = "a" * 40
 digest = "b" * 64
 data = {
     "schema_version": 2,
-    "bootstrap_version": "0.6.0",
+    "bootstrap_version": "0.6.1",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",
@@ -394,6 +394,7 @@ assert "actions/download-artifact@" in publish
 assert "actions/checkout@" not in publish
 assert "bash tests/unit.sh" not in publish
 assert "bin/speckit-bootstrap" not in publish
+assert '--repo "$GITHUB_REPOSITORY"' in publish
 PY
 }
 

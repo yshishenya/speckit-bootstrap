@@ -27,7 +27,7 @@ install a specific release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.6.0 bash
+  SPECKIT_BOOTSTRAP_VERSION=v0.6.1 bash
 ```
 
 This installs:

@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.6.1] - 2026-07-13
+
+### Fixed
+
+- Pass the repository explicitly to `gh release upload` so the isolated
+  publishing job can attach verified assets without requiring a source checkout.
+
 ## [0.6.0] - 2026-07-13
 
 ### Added
