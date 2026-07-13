@@ -6,6 +6,56 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.6.0] - 2026-07-13
+
+### Added
+
+- Added `--doctor`, `--dry-run`, `--frozen`, `--json`, and `--version` modes.
+- Added `.specify/speckit-bootstrap.lock.json` with exact Spec Kit,
+  `github-issue-canon`, Ponytail, immutable commit refs, source metadata,
+  marketplace/extension hashes, and the installed workflow checksum for
+  reproducible refreshes.
+- Added isolated unit tests, macOS/Ubuntu live smoke tests, scheduled upstream
+  compatibility checks, Dependabot configuration, and release-asset automation.
+- Added project-local issue canon docs, issue forms, and PR template installation
+  even when no GitHub remote is configured.
+
+### Changed
+
+- `github-issue-canon` now installs from a resolved release tag instead of a
+  mutable `main` archive; the actual download URL is pinned to the tag's commit.
+- Ponytail now uses a versioned managed local marketplace descriptor that pins
+  the plugin source to the tag's commit SHA. Installed versions/refs are
+  verified, and guidance comes from the installed plugin cache.
+- Spec Kit installation now uses the commit SHA behind the selected release
+  tag while retaining the tag as the human-readable version.
+- User extension catalogs are merged additively, and extension refreshes no
+  longer remove the previous installation before replacement.
+- Global Spec Kit skills are staged, validated, and atomically swapped under a
+  process lock while preserving unrelated and user-owned skills.
+- The installer now consumes GitHub Release assets and verifies SHA-256 before
+  installing the executable.
+- Frozen runs now preserve the locked catalog-backed workflow/core extensions
+  and fail on version or hash drift instead of refreshing mutable catalog state.
+
+### Fixed
+
+- Fresh `uv tool install` runs now expose uv's tool bin directory to the current
+  bootstrap process, including isolated CI homes.
+- Audit mode now removes existing `skip-worktree` bits instead of merely
+  refraining from adding new ones.
+- Managed risk-lane template changes now fail closed when upstream template
+  anchors drift, rather than silently claiming success.
+- Agent-context refresh now discovers the actual `specify` interpreter from its
+  launcher before falling back to conventional uv paths.
+
+### Security
+
+- Added checksum-verified release installation and explicit opt-in for legacy
+  unverified sources.
+- Pinned third-party GitHub Actions by full commit SHA and reduced workflow
+  permissions to the minimum required per workflow.
+
 ## [0.5.2] - 2026-07-08
 
 ### Changed

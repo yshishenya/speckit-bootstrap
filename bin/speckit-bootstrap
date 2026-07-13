@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+BOOTSTRAP_VERSION="0.6.0"
+
 usage() {
   cat <<'EOF'
-Usage: speckit-bootstrap [PROJECT_DIR] [--keep-local-skills] [--skip-cli-update] [--skip-ponytail]
+Usage: speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 
 Bootstraps GitHub Spec Kit for Codex in one command:
   - installs/updates official specify-cli from github/spec-kit
@@ -14,15 +16,30 @@ Bootstraps GitHub Spec Kit for Codex in one command:
   - removes project-local speckit-* skill duplicates by default
   - installs/updates the Ponytail Codex plugin and project guidance
 
+Modes:
+  --doctor                  Verify the current installation without changing it.
+  --dry-run                 Resolve versions and print the planned changes only.
+  --version                 Print the bootstrap version and exit.
+
+Options:
+  --frozen                  Use versions from .specify/speckit-bootstrap.lock.json.
+  --json                    Print a machine-readable final summary.
+  --keep-local-skills       Keep project-local generated skills after global sync.
+  --skip-cli-update         Use the currently installed specify CLI.
+  --skip-ponytail           Skip Ponytail plugin and guidance updates.
+
 Environment:
   SPEC_KIT_VERSION=vX.Y.Z   Optional pin for reproducible rollbacks.
                             Default: resolve and install latest v* tag.
   SPECKIT_GITHUB_ISSUE_CANON_URL
                             Optional ZIP URL for the reusable GitHub Issue
-                            Canon extension. Default: yshishenya/main.
+                            Canon extension. Default: resolved release tag.
   SPECKIT_EXTENSION_CATALOG_URL
                             Optional catalog URL for Yan's approved Spec Kit
                             extensions. Default: yshishenya/main catalog.
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION
+                            Optional github-issue-canon tag. Default: latest v* tag.
+  SPECKIT_PONYTAIL_VERSION  Optional Ponytail tag. Default: latest v* tag.
   SPECKIT_TRACK_INSTALL_METADATA=1
                             Keep Spec Kit install/version metadata visible in git.
                             Default: hide refresh-only metadata with skip-worktree.
@@ -34,55 +51,106 @@ PROJECT_DIR=""
 KEEP_LOCAL_SKILLS=0
 SKIP_CLI_UPDATE=0
 SKIP_PONYTAIL=0
+MODE="apply"
+DRY_RUN=0
+FROZEN=0
+OUTPUT_JSON=0
+RESOLVED_SPEC_KIT_VERSION=""
+RESOLVED_SPEC_KIT_REF=""
+RESOLVED_ISSUE_CANON_VERSION=""
+RESOLVED_ISSUE_CANON_REF=""
+RESOLVED_ISSUE_CANON_INSTALLED_VERSION=""
+RESOLVED_ISSUE_CANON_URL=""
+RESOLVED_ISSUE_CANON_MANIFEST_HASH=""
+RESOLVED_PONYTAIL_VERSION=""
+RESOLVED_PONYTAIL_REF=""
+RESOLVED_PONYTAIL_MARKETPLACE_SHA256=""
+RESOLVED_AGENT_CONTEXT_VERSION=""
+RESOLVED_AGENT_CONTEXT_MANIFEST_HASH=""
+RESOLVED_GIT_EXTENSION_VERSION=""
+RESOLVED_GIT_EXTENSION_MANIFEST_HASH=""
+RESOLVED_WORKFLOW_VERSION=""
+RESOLVED_WORKFLOW_SHA256=""
+PONYTAIL_PLUGIN_STATUS="skipped"
+GLOBAL_LOCK_DIR=""
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
-GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/refs/heads/main.zip}"
-PONYTAIL_UPSTREAM_AGENTS_URL="https://raw.githubusercontent.com/DietrichGebert/ponytail/main/AGENTS.md"
+GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-}"
 PONYTAIL_UPSTREAM_AGENTS_PATH="docs/agent-guidance/ponytail-upstream.md"
 PONYTAIL_UPSTREAM_AGENTS_STATUS="skipped"
 TRACK_INSTALL_METADATA="${SPECKIT_TRACK_INSTALL_METADATA:-0}"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --keep-local-skills)
-      KEEP_LOCAL_SKILLS=1
-      shift
-      ;;
-    --skip-cli-update)
-      SKIP_CLI_UPDATE=1
-      shift
-      ;;
-    --skip-ponytail)
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --doctor)
+        MODE="doctor"
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
+        ;;
+      --frozen)
+        FROZEN=1
+        shift
+        ;;
+      --json)
+        OUTPUT_JSON=1
+        shift
+        ;;
+      --keep-local-skills)
+        KEEP_LOCAL_SKILLS=1
+        shift
+        ;;
+      --skip-cli-update)
+        SKIP_CLI_UPDATE=1
+        shift
+        ;;
+      --skip-ponytail)
+        SKIP_PONYTAIL=1
+        shift
+        ;;
+      --version)
+        MODE="version"
+        shift
+        ;;
+      -h|--help)
+        MODE="help"
+        shift
+        ;;
+      -*)
+        echo "speckit-bootstrap: unknown option: $1" >&2
+        usage >&2
+        return 2
+        ;;
+      *)
+        if [[ -n "$PROJECT_DIR" ]]; then
+          echo "speckit-bootstrap: PROJECT_DIR already set to '$PROJECT_DIR'" >&2
+          return 2
+        fi
+        PROJECT_DIR="$1"
+        shift
+        ;;
+    esac
+  done
+
+  case "${SPECKIT_PONYTAIL:-1}" in
+    0|false|False|FALSE|no|No|NO|off|Off|OFF)
       SKIP_PONYTAIL=1
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    -*)
-      echo "speckit-bootstrap: unknown option: $1" >&2
-      usage >&2
-      exit 2
-      ;;
-    *)
-      if [[ -n "$PROJECT_DIR" ]]; then
-        echo "speckit-bootstrap: PROJECT_DIR already set to '$PROJECT_DIR'" >&2
-        exit 2
-      fi
-      PROJECT_DIR="$1"
-      shift
       ;;
   esac
-done
 
-case "${SPECKIT_PONYTAIL:-1}" in
-  0|false|False|FALSE|no|No|NO|off|Off|OFF)
-    SKIP_PONYTAIL=1
-    ;;
-esac
+  if [[ "$MODE" == "version" || "$MODE" == "help" ]]; then
+    return 0
+  fi
 
-PROJECT_DIR="${PROJECT_DIR:-$PWD}"
-PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+  PROJECT_DIR="${PROJECT_DIR:-$PWD}"
+  if [[ ! -d "$PROJECT_DIR" ]]; then
+    echo "speckit-bootstrap: project directory does not exist: $PROJECT_DIR" >&2
+    return 2
+  fi
+  PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
+}
 
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -91,94 +159,577 @@ require_cmd() {
   fi
 }
 
-require_cmd git
-require_cmd uv
+resolve_latest_tag() {
+  local repository_url="$1"
+
+  git ls-remote --tags --sort='v:refname' "$repository_url" 'refs/tags/v*' |
+    sed -n 's#.*refs/tags/\(v[^^]*\)$#\1#p' |
+    tail -1
+}
+
+resolve_tag_commit() {
+  local repository_url="$1"
+  local tag="$2"
+  local commit
+  commit="$(git ls-remote --tags "$repository_url" \
+    "refs/tags/$tag" "refs/tags/$tag^{}" | \
+    awk '$2 ~ /\^\{\}$/ {print $1; found=1; exit} NR == 1 {fallback=$1} END {if (!found) print fallback}')"
+  if [[ ! "$commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "speckit-bootstrap: could not resolve immutable commit for $repository_url@$tag" >&2
+    return 1
+  fi
+  printf '%s\n' "$commit"
+}
 
 resolve_spec_kit_version() {
   local requested="${SPEC_KIT_VERSION:-latest}"
-  if [[ "$requested" != "latest" ]]; then
+  if [[ "$requested" == "latest" ]]; then
+    resolve_latest_tag https://github.com/github/spec-kit.git
+    return
+  fi
+  if [[ "$requested" == v* || "$requested" =~ ^[0-9a-fA-F]{40}$ ]]; then
     printf '%s\n' "$requested"
     return
   fi
 
-  git ls-remote --tags --sort='v:refname' \
-    https://github.com/github/spec-kit.git 'refs/tags/v*' |
-    sed -n 's#.*refs/tags/\(v[^^]*\)$#\1#p' |
-    tail -1
+  local resolved
+  resolved="$(git ls-remote https://github.com/github/spec-kit.git \
+    "$requested" "refs/heads/$requested" "refs/tags/$requested" | awk 'NR == 1 {print $1}')"
+  if [[ -z "$resolved" ]]; then
+    echo "speckit-bootstrap: could not resolve Spec Kit ref '$requested'" >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
+}
+
+normalize_tag() {
+  case "$1" in
+    v*) printf '%s\n' "$1" ;;
+    *) printf 'v%s\n' "$1" ;;
+  esac
+}
+
+require_remote_tag() {
+  local repository_url="$1"
+  local tag="$2"
+  if ! git ls-remote --exit-code --tags "$repository_url" "refs/tags/$tag" >/dev/null; then
+    echo "speckit-bootstrap: tag $tag does not exist in $repository_url" >&2
+    return 1
+  fi
+}
+
+require_safe_version_tag() {
+  local tag="$1"
+  local label="$2"
+  if [[ ! "$tag" =~ ^v[0-9A-Za-z][0-9A-Za-z._+-]*$ ]]; then
+    echo "speckit-bootstrap: unsafe $label tag: $tag" >&2
+    return 1
+  fi
+}
+
+require_commit_sha() {
+  local commit="$1"
+  local label="$2"
+  if [[ ! "$commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    echo "speckit-bootstrap: invalid $label commit SHA: $commit" >&2
+    return 1
+  fi
+}
+
+lock_file() {
+  printf '%s/.specify/speckit-bootstrap.lock.json\n' "$PROJECT_DIR"
+}
+
+read_lock_value() {
+  local path="$1"
+  local key="$2"
+
+  python3 - "$path" "$key" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+try:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    for part in sys.argv[2].split("."):
+        value = value[part]
+except (OSError, json.JSONDecodeError, KeyError, TypeError) as error:
+    print(f"speckit-bootstrap: invalid lock file {path}: {error}", file=sys.stderr)
+    raise SystemExit(1)
+if isinstance(value, bool):
+    print("true" if value else "false")
+else:
+    print(value)
+PY
+}
+
+prepare_versions() {
+  local lock
+  lock="$(lock_file)"
+
+  if [[ "$FROZEN" -eq 1 ]]; then
+    if [[ ! -f "$lock" ]]; then
+      echo "speckit-bootstrap: --frozen requires $lock" >&2
+      return 1
+    fi
+    if [[ "$(read_lock_value "$lock" schema_version)" != "1" ]]; then
+      echo "speckit-bootstrap: unsupported lock schema in $lock" >&2
+      return 1
+    fi
+    RESOLVED_SPEC_KIT_VERSION="$(read_lock_value "$lock" spec_kit.version)"
+    RESOLVED_SPEC_KIT_REF="$(read_lock_value "$lock" spec_kit.ref)"
+    RESOLVED_ISSUE_CANON_VERSION="$(read_lock_value "$lock" github_issue_canon.version)"
+    RESOLVED_ISSUE_CANON_REF="$(read_lock_value "$lock" github_issue_canon.ref)"
+    RESOLVED_ISSUE_CANON_INSTALLED_VERSION="$(read_lock_value "$lock" github_issue_canon.installed_version)"
+    RESOLVED_ISSUE_CANON_URL="$(read_lock_value "$lock" github_issue_canon.source_url)"
+    RESOLVED_ISSUE_CANON_MANIFEST_HASH="$(read_lock_value "$lock" github_issue_canon.manifest_hash)"
+    RESOLVED_AGENT_CONTEXT_VERSION="$(read_lock_value "$lock" extensions.agent_context.version)"
+    RESOLVED_AGENT_CONTEXT_MANIFEST_HASH="$(read_lock_value "$lock" extensions.agent_context.manifest_hash)"
+    RESOLVED_GIT_EXTENSION_VERSION="$(read_lock_value "$lock" extensions.git.version)"
+    RESOLVED_GIT_EXTENSION_MANIFEST_HASH="$(read_lock_value "$lock" extensions.git.manifest_hash)"
+    RESOLVED_WORKFLOW_VERSION="$(read_lock_value "$lock" workflow.version)"
+    RESOLVED_WORKFLOW_SHA256="$(read_lock_value "$lock" workflow.sha256)"
+    require_commit_sha "$RESOLVED_SPEC_KIT_REF" "Spec Kit"
+    if [[ "$RESOLVED_ISSUE_CANON_REF" != "custom" ]]; then
+      require_commit_sha "$RESOLVED_ISSUE_CANON_REF" github-issue-canon
+    fi
+    if [[ "$(read_lock_value "$lock" ponytail.enabled)" == "false" ]]; then
+      SKIP_PONYTAIL=1
+    elif [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
+      RESOLVED_PONYTAIL_VERSION="$(read_lock_value "$lock" ponytail.version)"
+      RESOLVED_PONYTAIL_REF="$(read_lock_value "$lock" ponytail.ref)"
+      RESOLVED_PONYTAIL_MARKETPLACE_SHA256="$(read_lock_value "$lock" ponytail.marketplace_sha256)"
+      require_safe_version_tag "$RESOLVED_PONYTAIL_VERSION" Ponytail
+      require_commit_sha "$RESOLVED_PONYTAIL_REF" Ponytail
+    fi
+    return 0
+  fi
+
+  if [[ "$SKIP_CLI_UPDATE" -eq 1 ]]; then
+    require_cmd specify
+    RESOLVED_SPEC_KIT_VERSION="$(specify --version | awk '{print $NF}')"
+    RESOLVED_SPEC_KIT_VERSION="$(normalize_tag "$RESOLVED_SPEC_KIT_VERSION")"
+  else
+    RESOLVED_SPEC_KIT_VERSION="$(resolve_spec_kit_version)"
+  fi
+
+  if [[ -z "$RESOLVED_SPEC_KIT_VERSION" ]]; then
+    echo "speckit-bootstrap: could not resolve github/spec-kit version" >&2
+    return 1
+  fi
+  if [[ "$RESOLVED_SPEC_KIT_VERSION" =~ ^[0-9a-fA-F]{40}$ ]]; then
+    RESOLVED_SPEC_KIT_REF="$RESOLVED_SPEC_KIT_VERSION"
+  else
+    require_safe_version_tag "$RESOLVED_SPEC_KIT_VERSION" "Spec Kit"
+    RESOLVED_SPEC_KIT_REF="$(resolve_tag_commit https://github.com/github/spec-kit.git "$RESOLVED_SPEC_KIT_VERSION")"
+  fi
+
+  if [[ -n "$GITHUB_ISSUE_CANON_EXTENSION_URL" ]]; then
+    RESOLVED_ISSUE_CANON_VERSION="custom"
+    RESOLVED_ISSUE_CANON_REF="custom"
+    RESOLVED_ISSUE_CANON_URL="$GITHUB_ISSUE_CANON_EXTENSION_URL"
+  else
+    local requested_canon="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
+    if [[ "$requested_canon" == "latest" ]]; then
+      RESOLVED_ISSUE_CANON_VERSION="$(resolve_latest_tag https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git)"
+    else
+      RESOLVED_ISSUE_CANON_VERSION="$(normalize_tag "$requested_canon")"
+      require_remote_tag \
+        https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
+        "$RESOLVED_ISSUE_CANON_VERSION"
+    fi
+    if [[ -z "$RESOLVED_ISSUE_CANON_VERSION" ]]; then
+      echo "speckit-bootstrap: could not resolve github-issue-canon version" >&2
+      return 1
+    fi
+    require_safe_version_tag "$RESOLVED_ISSUE_CANON_VERSION" github-issue-canon
+    RESOLVED_ISSUE_CANON_REF="$(resolve_tag_commit \
+      https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
+      "$RESOLVED_ISSUE_CANON_VERSION")"
+    RESOLVED_ISSUE_CANON_URL="https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/$RESOLVED_ISSUE_CANON_REF.zip"
+  fi
+
+  if [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
+    local requested_ponytail="${SPECKIT_PONYTAIL_VERSION:-latest}"
+    if [[ "$requested_ponytail" == "latest" ]]; then
+      RESOLVED_PONYTAIL_VERSION="$(resolve_latest_tag https://github.com/DietrichGebert/ponytail.git)"
+    else
+      RESOLVED_PONYTAIL_VERSION="$(normalize_tag "$requested_ponytail")"
+      require_remote_tag \
+        https://github.com/DietrichGebert/ponytail.git \
+        "$RESOLVED_PONYTAIL_VERSION"
+    fi
+    if [[ -z "$RESOLVED_PONYTAIL_VERSION" ]]; then
+      echo "speckit-bootstrap: could not resolve Ponytail version" >&2
+      return 1
+    fi
+    require_safe_version_tag "$RESOLVED_PONYTAIL_VERSION" Ponytail
+    RESOLVED_PONYTAIL_REF="$(resolve_tag_commit \
+      https://github.com/DietrichGebert/ponytail.git \
+      "$RESOLVED_PONYTAIL_VERSION")"
+  fi
 }
 
 install_cli() {
   if [[ "$SKIP_CLI_UPDATE" -eq 1 ]]; then
     require_cmd specify
+    if [[ "$FROZEN" -eq 1 && "$RESOLVED_SPEC_KIT_VERSION" == v* ]]; then
+      local installed
+      installed="$(normalize_tag "$(specify --version | awk '{print $NF}')")"
+      if [[ "$installed" != "$RESOLVED_SPEC_KIT_VERSION" ]]; then
+        echo "speckit-bootstrap: installed specify $installed does not match frozen $RESOLVED_SPEC_KIT_VERSION" >&2
+        return 1
+      fi
+    fi
     return
   fi
 
-  local version
-  version="$(resolve_spec_kit_version)"
-  if [[ -z "$version" ]]; then
-    echo "speckit-bootstrap: could not resolve latest github/spec-kit tag" >&2
-    exit 1
+  echo "speckit-bootstrap: installing specify-cli $RESOLVED_SPEC_KIT_VERSION from github/spec-kit@$RESOLVED_SPEC_KIT_REF"
+  uv tool install specify-cli --force \
+    --from "git+https://github.com/github/spec-kit.git@$RESOLVED_SPEC_KIT_REF"
+
+  # uv does not add its tool directory to PATH for the current process. Make the
+  # freshly installed launcher immediately available, including in clean CI homes.
+  local uv_tool_bin
+  uv_tool_bin="$(uv tool dir --bin)"
+  PATH="$uv_tool_bin:$PATH"
+  export PATH
+  require_cmd specify
+}
+
+installed_ponytail_version() {
+  command -v codex >/dev/null 2>&1 || return 0
+  codex plugin list --json --available 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for plugin in data.get("installed", []):
+    if plugin.get("pluginId") == "ponytail@ponytail" and plugin.get("installed"):
+        print(plugin.get("version", ""))
+        break
+' 2>/dev/null || true
+}
+
+installed_ponytail_ref() {
+  command -v codex >/dev/null 2>&1 || return 0
+  codex plugin list --json --available 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for plugin in data.get("installed", []):
+    if plugin.get("pluginId") == "ponytail@ponytail" and plugin.get("installed"):
+        print(plugin.get("source", {}).get("ref", ""))
+        break
+' 2>/dev/null || true
+}
+
+ponytail_marketplace_configured() {
+  codex plugin marketplace list --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+raise SystemExit(0 if any(item.get("name") == "ponytail" for item in data.get("marketplaces", [])) else 1)
+' 2>/dev/null
+}
+
+ponytail_marketplace_info() {
+  codex plugin marketplace list --json 2>/dev/null | python3 -c '
+import json, sys
+data = json.load(sys.stdin)
+for item in data.get("marketplaces", []):
+    if item.get("name") != "ponytail":
+        continue
+    source = item.get("marketplaceSource", {})
+    print(f"{source.get('"'"'sourceType'"'"', '')}\t{source.get('"'"'source'"'"', '')}")
+    break
+' 2>/dev/null || true
+}
+
+ponytail_git_marketplace_ref() {
+  local config="$HOME/.codex/config.toml"
+  [[ -f "$config" ]] || return 0
+  python3 - "$config" <<'PY'
+import sys
+from pathlib import Path
+
+section = ""
+for raw_line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    line = raw_line.strip()
+    if line.startswith("[") and line.endswith("]"):
+        section = line
+        continue
+    if section != "[marketplaces.ponytail]" or not line.startswith("ref"):
+        continue
+    key, separator, value = line.partition("=")
+    if separator and key.strip() == "ref":
+        print(value.strip().strip('"').strip("'"))
+        break
+PY
+}
+
+ponytail_managed_marketplace_path() {
+  printf '%s/.codex/speckit-bootstrap/marketplaces/ponytail/%s\n' \
+    "$HOME" "$RESOLVED_PONYTAIL_VERSION"
+}
+
+ponytail_descriptor_ref() {
+  local descriptor
+  descriptor="$(ponytail_managed_marketplace_path)/.agents/plugins/marketplace.json"
+  [[ -f "$descriptor" ]] || return 0
+  python3 - "$descriptor" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for plugin in data.get("plugins", []):
+    if plugin.get("name") == "ponytail":
+        print(plugin.get("source", {}).get("ref", ""))
+        break
+PY
+}
+
+prepare_managed_ponytail_marketplace() {
+  local target
+  local descriptor
+  local parent
+  local build
+  local checkout
+  local generated
+  local actual_sha256
+  target="$(ponytail_managed_marketplace_path)"
+  descriptor="$target/.agents/plugins/marketplace.json"
+
+  if [[ -f "$descriptor" ]]; then
+    actual_sha256="$(sha256_path "$descriptor")"
+    if [[ "$(ponytail_descriptor_ref)" != "$RESOLVED_PONYTAIL_REF" ]]; then
+      echo "speckit-bootstrap: managed Ponytail descriptor has the wrong plugin ref" >&2
+      return 1
+    fi
+    if [[ "$FROZEN" -eq 1 && "$actual_sha256" != "$RESOLVED_PONYTAIL_MARKETPLACE_SHA256" ]]; then
+      echo "speckit-bootstrap: managed Ponytail descriptor does not match the frozen lock" >&2
+      return 1
+    fi
+    RESOLVED_PONYTAIL_MARKETPLACE_SHA256="$actual_sha256"
+    return 0
   fi
 
-  echo "speckit-bootstrap: installing specify-cli from github/spec-kit@$version"
-  uv tool install specify-cli --force \
-    --from "git+https://github.com/github/spec-kit.git@$version"
+  parent="$(dirname "$target")"
+  mkdir -p "$parent"
+  build="$(mktemp -d "$parent/.build.XXXXXX")"
+  checkout="$build/upstream"
+  generated="$build/marketplace"
+
+  if ! git -c advice.detachedHead=false clone --quiet --depth 1 \
+    --branch "$RESOLVED_PONYTAIL_VERSION" \
+    https://github.com/DietrichGebert/ponytail.git "$checkout"; then
+    rm -rf "$build"
+    echo "speckit-bootstrap: failed to fetch Ponytail $RESOLVED_PONYTAIL_VERSION" >&2
+    return 1
+  fi
+
+  mkdir -p "$generated/.agents/plugins"
+  python3 - \
+    "$checkout/.agents/plugins/marketplace.json" \
+    "$generated/.agents/plugins/marketplace.json" \
+    "$RESOLVED_PONYTAIL_REF" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+source_ref = sys.argv[3]
+data = json.loads(source.read_text(encoding="utf-8"))
+if data.get("name") != "ponytail":
+    raise SystemExit("speckit-bootstrap: upstream Ponytail marketplace name changed")
+plugin = next((item for item in data.get("plugins", []) if item.get("name") == "ponytail"), None)
+if plugin is None:
+    raise SystemExit("speckit-bootstrap: upstream Ponytail plugin entry is missing")
+plugin_source = plugin.get("source", {})
+if plugin_source.get("source") != "url" or "DietrichGebert/ponytail" not in plugin_source.get("url", ""):
+    raise SystemExit("speckit-bootstrap: upstream Ponytail plugin source changed")
+plugin_source["ref"] = source_ref
+target.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+
+  actual_sha256="$(sha256_path "$generated/.agents/plugins/marketplace.json")"
+  if [[ "$FROZEN" -eq 1 && "$actual_sha256" != "$RESOLVED_PONYTAIL_MARKETPLACE_SHA256" ]]; then
+    rm -rf "$build"
+    echo "speckit-bootstrap: fetched Ponytail descriptor does not match the frozen lock" >&2
+    return 1
+  fi
+
+  if ! mv "$generated" "$target"; then
+    rm -rf "$build"
+    echo "speckit-bootstrap: failed to install managed Ponytail marketplace descriptor" >&2
+    return 1
+  fi
+  rm -rf "$build"
+  RESOLVED_PONYTAIL_MARKETPLACE_SHA256="$actual_sha256"
+  echo "speckit-bootstrap: prepared managed Ponytail marketplace at $target"
+}
+
+restore_ponytail_state() {
+  local previous_type="$1"
+  local previous_source="$2"
+  local previous_ref="$3"
+  local had_plugin="$4"
+  local -a args
+
+  [[ -n "$previous_source" ]] || return 0
+  args=(plugin marketplace add "$previous_source" --json)
+  if [[ "$previous_type" == "git" && -n "$previous_ref" ]]; then
+    args=(plugin marketplace add "$previous_source" --ref "$previous_ref" --json)
+  fi
+  codex "${args[@]}" >/dev/null || true
+  if [[ "$had_plugin" -eq 1 ]]; then
+    codex plugin add ponytail@ponytail --json >/dev/null || true
+  fi
 }
 
 ensure_ponytail_codex_plugin() {
   [[ "$SKIP_PONYTAIL" -eq 0 ]] || return 0
 
   if ! command -v codex >/dev/null 2>&1; then
-    echo "speckit-bootstrap: codex CLI not found; skipped Ponytail plugin install" >&2
-    return 0
+    PONYTAIL_PLUGIN_STATUS="failed"
+    echo "speckit-bootstrap: codex CLI is required unless --skip-ponytail is used" >&2
+    return 1
   fi
 
-  echo "speckit-bootstrap: updating Ponytail marketplace"
-  if ! codex plugin marketplace upgrade ponytail --json >/dev/null; then
-    echo "speckit-bootstrap: adding Ponytail marketplace"
-    if ! codex plugin marketplace add DietrichGebert/ponytail --json >/dev/null; then
-      echo "speckit-bootstrap: failed to add Ponytail marketplace; continuing without plugin install" >&2
-      return 0
+  local installed
+  local installed_ref
+  local target
+  local info
+  local previous_type=""
+  local previous_source=""
+  local previous_ref=""
+  local had_plugin=0
+  local switched=0
+  local needs_install=0
+
+  if ! prepare_managed_ponytail_marketplace; then
+    PONYTAIL_PLUGIN_STATUS="failed"
+    return 1
+  fi
+  target="$(ponytail_managed_marketplace_path)"
+  installed="$(installed_ponytail_version)"
+  installed_ref="$(installed_ponytail_ref)"
+  if [[ -n "$installed" ]]; then
+    had_plugin=1
+  fi
+
+  if ponytail_marketplace_configured; then
+    info="$(ponytail_marketplace_info)"
+    IFS=$'\t' read -r previous_type previous_source <<< "$info"
+    previous_ref="$(ponytail_git_marketplace_ref)"
+  fi
+
+  if [[ "$previous_source" != "$target" ]]; then
+    if [[ "$had_plugin" -eq 1 ]] && ! codex plugin remove ponytail@ponytail --json >/dev/null; then
+      PONYTAIL_PLUGIN_STATUS="failed"
+      echo "speckit-bootstrap: failed to remove Ponytail before switching marketplace" >&2
+      return 1
     fi
+    if [[ -n "$previous_source" ]] && ! codex plugin marketplace remove ponytail --json >/dev/null; then
+      PONYTAIL_PLUGIN_STATUS="failed"
+      echo "speckit-bootstrap: failed to remove the previous Ponytail marketplace" >&2
+      [[ "$had_plugin" -eq 0 ]] || codex plugin add ponytail@ponytail --json >/dev/null || true
+      return 1
+    fi
+    if ! codex plugin marketplace add "$target" --json >/dev/null; then
+      PONYTAIL_PLUGIN_STATUS="failed"
+      echo "speckit-bootstrap: failed to add the managed Ponytail marketplace; restoring previous state" >&2
+      restore_ponytail_state "$previous_type" "$previous_source" "$previous_ref" "$had_plugin"
+      return 1
+    fi
+    switched=1
+    needs_install=1
+  elif [[ -z "$installed" ]]; then
+    needs_install=1
+  elif [[ "$(normalize_tag "$installed")" != "$RESOLVED_PONYTAIL_VERSION" ||
+          "$installed_ref" != "$RESOLVED_PONYTAIL_REF" ]]; then
+    echo "speckit-bootstrap: reinstalling Ponytail v$installed for requested $RESOLVED_PONYTAIL_VERSION"
+    if ! codex plugin remove ponytail@ponytail --json >/dev/null; then
+      PONYTAIL_PLUGIN_STATUS="failed"
+      echo "speckit-bootstrap: failed to remove mismatched Ponytail v$installed" >&2
+      return 1
+    fi
+    needs_install=1
   fi
 
-  if codex plugin add ponytail@ponytail --json >/dev/null; then
-    echo "speckit-bootstrap: installed/updated Ponytail Codex plugin"
-  else
-    echo "speckit-bootstrap: failed to install Ponytail Codex plugin; continuing" >&2
-    return 0
+  if [[ "$needs_install" -eq 1 ]] && ! codex plugin add ponytail@ponytail --json >/dev/null; then
+    PONYTAIL_PLUGIN_STATUS="failed"
+    echo "speckit-bootstrap: failed to install Ponytail Codex plugin" >&2
+    if [[ "$switched" -eq 1 ]]; then
+      codex plugin marketplace remove ponytail --json >/dev/null || true
+      restore_ponytail_state "$previous_type" "$previous_source" "$previous_ref" "$had_plugin"
+    fi
+    return 1
   fi
 
-  echo "speckit-bootstrap: review/trust Ponytail hooks in Codex with /hooks after plugin updates"
+  installed="$(installed_ponytail_version)"
+  installed_ref="$(installed_ponytail_ref)"
+  if [[ -z "$installed" ]]; then
+    PONYTAIL_PLUGIN_STATUS="failed"
+    echo "speckit-bootstrap: Ponytail install returned success but the plugin is not listed" >&2
+    return 1
+  fi
+
+  if [[ "$(normalize_tag "$installed")" != "$RESOLVED_PONYTAIL_VERSION" ]]; then
+    PONYTAIL_PLUGIN_STATUS="failed"
+    echo "speckit-bootstrap: installed Ponytail v$installed does not match requested $RESOLVED_PONYTAIL_VERSION" >&2
+    if [[ "$switched" -eq 1 ]]; then
+      codex plugin remove ponytail@ponytail --json >/dev/null || true
+      codex plugin marketplace remove ponytail --json >/dev/null || true
+      restore_ponytail_state "$previous_type" "$previous_source" "$previous_ref" "$had_plugin"
+    fi
+    return 1
+  fi
+  if [[ "$installed_ref" != "$RESOLVED_PONYTAIL_REF" ]]; then
+    PONYTAIL_PLUGIN_STATUS="failed"
+    echo "speckit-bootstrap: installed Ponytail ref '$installed_ref' does not match requested $RESOLVED_PONYTAIL_REF" >&2
+    if [[ "$switched" -eq 1 ]]; then
+      codex plugin remove ponytail@ponytail --json >/dev/null || true
+      codex plugin marketplace remove ponytail --json >/dev/null || true
+      restore_ponytail_state "$previous_type" "$previous_source" "$previous_ref" "$had_plugin"
+    fi
+    return 1
+  fi
+
+  PONYTAIL_PLUGIN_STATUS="installed"
+  echo "speckit-bootstrap: managed Ponytail marketplace: $target"
+  echo "speckit-bootstrap: installed/updated Ponytail Codex plugin v$installed"
+  echo "speckit-bootstrap: review Ponytail hooks in Codex with /hooks before relying on them"
+}
+
+installed_ponytail_agents_path() {
+  local installed
+  installed="$(installed_ponytail_version)"
+  [[ -n "$installed" ]] || return 1
+  printf '%s/.codex/plugins/cache/ponytail/ponytail/%s/AGENTS.md\n' "$HOME" "$installed"
 }
 
 ensure_ponytail_upstream_agents() {
   [[ "$SKIP_PONYTAIL" -eq 0 ]] || return 0
 
   local dest="$PROJECT_DIR/$PONYTAIL_UPSTREAM_AGENTS_PATH"
+  local source
   local tmp
 
-  if ! command -v curl >/dev/null 2>&1; then
+  source="$(installed_ponytail_agents_path || true)"
+  if [[ -z "$source" || ! -f "$source" ]]; then
     PONYTAIL_UPSTREAM_AGENTS_STATUS="failed"
-    echo "speckit-bootstrap: curl not found; skipped Ponytail upstream AGENTS.md refresh" >&2
-    return 0
-  fi
-
-  tmp="$(mktemp)"
-  if ! curl -fsSL "$PONYTAIL_UPSTREAM_AGENTS_URL" -o "$tmp"; then
-    rm -f "$tmp"
-    PONYTAIL_UPSTREAM_AGENTS_STATUS="failed"
-    echo "speckit-bootstrap: failed to refresh Ponytail upstream AGENTS.md; continuing" >&2
-    return 0
+    echo "speckit-bootstrap: installed Ponytail AGENTS.md was not found in the plugin cache" >&2
+    return 1
   fi
 
   mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp "$(dirname "$dest")/.ponytail-upstream.XXXXXX")"
   {
     cat <<EOF
 # Ponytail Upstream AGENTS.md
 
-Generated by \`speckit-bootstrap\` from:
-$PONYTAIL_UPSTREAM_AGENTS_URL
+Generated by \`speckit-bootstrap\` from the installed Ponytail plugin cache.
+Version: $RESOLVED_PONYTAIL_VERSION
 
 Do not edit this file manually. Re-run \`speckit-bootstrap\` to refresh it.
 Project-specific Spec Kit rules live in the root \`AGENTS.md\` managed blocks.
@@ -186,9 +737,9 @@ Project-specific Spec Kit rules live in the root \`AGENTS.md\` managed blocks.
 ---
 
 EOF
-    cat "$tmp"
-  } > "$dest"
-  rm -f "$tmp"
+    cat "$source"
+  } > "$tmp"
+  mv "$tmp" "$dest"
 
   PONYTAIL_UPSTREAM_AGENTS_STATUS="synced"
   echo "speckit-bootstrap: refreshed Ponytail upstream AGENTS.md at $PONYTAIL_UPSTREAM_AGENTS_PATH"
@@ -199,37 +750,206 @@ ensure_user_extension_catalog() {
   local config="$config_dir/extension-catalogs.yml"
   mkdir -p "$config_dir"
 
-  if [[ -f "$config" ]] && grep -Fq "$YAN_EXTENSION_CATALOG_URL" "$config"; then
+  ensure_catalog_entry \
+    yshishenya \
+    "$YAN_EXTENSION_CATALOG_URL" \
+    1 \
+    true \
+    "Yan's approved Spec Kit extensions"
+  ensure_catalog_entry \
+    default \
+    https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json \
+    10 \
+    true \
+    "Built-in catalog of installable extensions"
+  ensure_catalog_entry \
+    community \
+    https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json \
+    20 \
+    false \
+    "Community-contributed extensions (discovery only)"
+
+  echo "speckit-bootstrap: merged user extension catalogs at $config"
+}
+
+ensure_catalog_entry() {
+  local name="$1"
+  local url="$2"
+  local priority="$3"
+  local install_allowed="$4"
+  local description="$5"
+  local config="$HOME/.specify/extension-catalogs.yml"
+  local backup=""
+  local existed=0
+
+  if [[ -f "$config" ]] && grep -Fq "$url" "$config"; then
     return 0
   fi
 
-  cat > "$config" <<EOF
-catalogs:
-  - name: yshishenya
-    url: $YAN_EXTENSION_CATALOG_URL
-    priority: 1
-    install_allowed: true
-    description: Yan's approved Spec Kit extensions
-  - name: default
-    url: https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.json
-    priority: 10
-    install_allowed: true
-    description: Built-in catalog of installable extensions
-  - name: community
-    url: https://raw.githubusercontent.com/github/spec-kit/main/extensions/catalog.community.json
-    priority: 20
-    install_allowed: false
-    description: Community-contributed extensions (discovery only)
-EOF
+  if [[ -f "$config" ]] && grep -Eq "^[[:space:]]*-?[[:space:]]*name:[[:space:]]*['\"]?${name}['\"]?[[:space:]]*$" "$config"; then
+    echo "speckit-bootstrap: preserved user-owned catalog '$name' with a different URL" >&2
+    return 0
+  fi
 
-  echo "speckit-bootstrap: installed user extension catalog at $config"
+  if [[ -f "$config" ]]; then
+    existed=1
+    backup="$(mktemp)"
+    cp "$config" "$backup"
+  fi
+
+  local -a args
+  args=(extension catalog add "$url" --name "$name" --priority "$priority" --description "$description")
+  if [[ "$install_allowed" == "true" ]]; then
+    args+=(--install-allowed)
+  fi
+
+  if ! SPECIFY_INIT_DIR="$HOME" specify "${args[@]}" >/dev/null; then
+    if [[ "$existed" -eq 1 ]]; then
+      cp "$backup" "$config"
+    else
+      rm -f "$config"
+    fi
+    [[ -z "$backup" ]] || rm -f "$backup"
+    echo "speckit-bootstrap: failed to add catalog '$name'; restored the previous config" >&2
+    return 1
+  fi
+
+  [[ -z "$backup" ]] || rm -f "$backup"
 }
 
 extension_installed() {
   local name="$1"
-  local list
-  list="$(specify extension list 2>/dev/null || true)"
-  printf '%s\n' "$list" | grep -Fq "$name"
+  local registry="$PROJECT_DIR/.specify/extensions/.registry"
+  [[ -f "$registry" ]] || return 1
+  python3 - "$registry" "$name" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+raise SystemExit(0 if sys.argv[2] in data.get("extensions", {}) else 1)
+PY
+}
+
+extension_version() {
+  local name="$1"
+  local registry="$PROJECT_DIR/.specify/extensions/.registry"
+  [[ -f "$registry" ]] || return 0
+  python3 - "$registry" "$name" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(data.get("extensions", {}).get(sys.argv[2], {}).get("version", ""))
+PY
+}
+
+extension_manifest_hash() {
+  local name="$1"
+  local registry="$PROJECT_DIR/.specify/extensions/.registry"
+  [[ -f "$registry" ]] || return 0
+  python3 - "$registry" "$name" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(data.get("extensions", {}).get(sys.argv[2], {}).get("manifest_hash", ""))
+PY
+}
+
+workflow_version() {
+  local registry="$PROJECT_DIR/.specify/workflows/workflow-registry.json"
+  [[ -f "$registry" ]] || return 0
+  python3 - "$registry" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(data.get("workflows", {}).get("speckit", {}).get("version", ""))
+PY
+}
+
+sha256_path() {
+  python3 - "$1" <<'PY'
+import hashlib
+import sys
+from pathlib import Path
+
+digest = hashlib.sha256()
+with Path(sys.argv[1]).open("rb") as handle:
+    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        digest.update(chunk)
+print(digest.hexdigest())
+PY
+}
+
+capture_project_dependency_state() {
+  local workflow="$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
+  if [[ ! -f "$workflow" ]]; then
+    echo "speckit-bootstrap: installed speckit workflow file is missing" >&2
+    return 1
+  fi
+
+  RESOLVED_AGENT_CONTEXT_VERSION="$(extension_version agent-context)"
+  RESOLVED_AGENT_CONTEXT_MANIFEST_HASH="$(extension_manifest_hash agent-context)"
+  RESOLVED_GIT_EXTENSION_VERSION="$(extension_version git)"
+  RESOLVED_GIT_EXTENSION_MANIFEST_HASH="$(extension_manifest_hash git)"
+  RESOLVED_ISSUE_CANON_INSTALLED_VERSION="$(extension_version github-issue-canon)"
+  RESOLVED_ISSUE_CANON_MANIFEST_HASH="$(extension_manifest_hash github-issue-canon)"
+  RESOLVED_WORKFLOW_VERSION="$(workflow_version)"
+  RESOLVED_WORKFLOW_SHA256="$(sha256_path "$workflow")"
+
+  if [[ -z "$RESOLVED_AGENT_CONTEXT_VERSION" || -z "$RESOLVED_AGENT_CONTEXT_MANIFEST_HASH" ||
+        -z "$RESOLVED_GIT_EXTENSION_VERSION" || -z "$RESOLVED_GIT_EXTENSION_MANIFEST_HASH" ||
+        -z "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" || -z "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" ||
+        -z "$RESOLVED_WORKFLOW_VERSION" ||
+        -z "$RESOLVED_WORKFLOW_SHA256" ]]; then
+    echo "speckit-bootstrap: could not capture complete extension/workflow lock state" >&2
+    return 1
+  fi
+}
+
+verify_locked_extension() {
+  local name="$1"
+  local expected_version="$2"
+  local expected_hash="$3"
+  local expected_skill="$4"
+  local actual_version
+  local actual_hash
+
+  actual_version="$(extension_version "$name")"
+  actual_hash="$(extension_manifest_hash "$name")"
+  if [[ "$actual_version" != "$expected_version" || "$actual_hash" != "$expected_hash" ]]; then
+    echo "speckit-bootstrap: frozen $name extension does not match the lock" >&2
+    echo "  expected: version=$expected_version manifest_hash=$expected_hash" >&2
+    echo "  actual:   version=$actual_version manifest_hash=$actual_hash" >&2
+    return 1
+  fi
+  if [[ ! -f "$PROJECT_DIR/$expected_skill" ]]; then
+    echo "speckit-bootstrap: frozen $name extension skill is missing: $expected_skill" >&2
+    return 1
+  fi
+}
+
+verify_locked_workflow() {
+  local workflow="$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
+  local actual_version
+  local actual_sha256
+  if [[ ! -f "$workflow" ]]; then
+    echo "speckit-bootstrap: frozen speckit workflow file is missing" >&2
+    return 1
+  fi
+  actual_version="$(workflow_version)"
+  actual_sha256="$(sha256_path "$workflow")"
+  if [[ "$actual_version" != "$RESOLVED_WORKFLOW_VERSION" || "$actual_sha256" != "$RESOLVED_WORKFLOW_SHA256" ]]; then
+    echo "speckit-bootstrap: frozen speckit workflow does not match the lock" >&2
+    echo "  expected: version=$RESOLVED_WORKFLOW_VERSION sha256=$RESOLVED_WORKFLOW_SHA256" >&2
+    echo "  actual:   version=$actual_version sha256=$actual_sha256" >&2
+    return 1
+  fi
 }
 
 ensure_extension() {
@@ -241,11 +961,7 @@ ensure_extension() {
     return 0
   fi
 
-  if extension_installed "$name"; then
-    specify extension remove "$name" --keep-config --force >/dev/null
-  fi
-
-  if output="$(specify extension add "$name" 2>&1)"; then
+  if output="$(specify extension add "$name" --force 2>&1)"; then
     printf '%s\n' "$output"
     return 0
   fi
@@ -261,18 +977,22 @@ ensure_extension() {
 ensure_extension_from_url() {
   local name="$1"
   local url="$2"
+  local expected_version="${3:-}"
+  local expected_skill="${4:-}"
   local output
+  local installed_version
 
-  if extension_installed "$name"; then
-    specify extension remove "$name" --keep-config --force >/dev/null
+  installed_version="$(extension_version "$name")"
+  if [[ -n "$expected_version" ]]; then
+    expected_version="${expected_version#v}"
   fi
-
-  if output="$(specify extension add "$name" 2>&1)"; then
-    printf '%s\n' "$output"
+  if extension_installed "$name" && \
+     { [[ -z "$expected_version" ]] || [[ "$installed_version" == "$expected_version" ]]; } && \
+     { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; }; then
     return 0
   fi
 
-  if output="$(printf 'y\n' | specify extension add "$name" --from "$url" 2>&1)"; then
+  if output="$(printf 'y\n' | specify extension add "$name" --from "$url" --force 2>&1)"; then
     printf '%s\n' "$output"
     return 0
   fi
@@ -478,59 +1198,142 @@ from pathlib import Path
 templates = Path(sys.argv[1])
 
 plan = templates / "plan-template.md"
-if plan.exists():
-    text = plan.read_text(encoding="utf-8")
-    if "**Risk / Validation Lane**:" not in text:
-        text = text.replace(
+if not plan.is_file():
+    raise SystemExit("speckit-bootstrap: generated plan-template.md is missing")
+text = plan.read_text(encoding="utf-8")
+if "**Risk / Validation Lane**:" not in text:
+    text = text.replace(
             "**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]\n",
             "**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]\n\n"
             "**Risk / Validation Lane**: [read-only / docs-only / tiny-low-risk-code / active-spec-slice / significant-feature / high-risk-feature / release-deploy, with rationale]\n\n"
             "**Release Gate**: [no deploy / cd dry-run / cd execute, with rationale]\n",
-        )
-    if "## Validation Plan" not in text:
-        text = text.replace(
+    )
+if "## Validation Plan" not in text:
+    text = text.replace(
             "[Gates determined based on constitution file]\n",
             "[Gates determined based on constitution file]\n\n"
             "## Validation Plan\n\n"
             "[Name the focused checks, quickstart scenarios, repository gate, and deploy gate\n"
             "required by the selected lane. Explain why broader gates are not required when\n"
             "the lane is low risk.]\n",
-        )
-    plan.write_text(text, encoding="utf-8")
+    )
+if "**Risk / Validation Lane**:" not in text or "## Validation Plan" not in text:
+    raise SystemExit(
+        "speckit-bootstrap: upstream plan-template.md changed; risk-lane anchors were not applied"
+    )
+plan.write_text(text, encoding="utf-8")
 
 tasks = templates / "tasks-template.md"
-if tasks.exists():
-    text = tasks.read_text(encoding="utf-8")
-    text = text.replace(
+if not tasks.is_file():
+    raise SystemExit("speckit-bootstrap: generated tasks-template.md is missing")
+text = tasks.read_text(encoding="utf-8")
+text = text.replace(
         "**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.",
         "**Tests**: The examples below include test tasks. Include tests when explicitly\n"
         "requested in the feature specification or when the selected risk/validation lane\n"
         "requires them.",
-    )
-    text = text.replace(
+)
+text = text.replace(
         "### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️",
         "### Tests for User Story 1 (if requested or lane-required) ⚠️",
-    )
-    text = text.replace(
+)
+text = text.replace(
         "### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️",
         "### Tests for User Story 2 (if requested or lane-required) ⚠️",
-    )
-    text = text.replace(
+)
+text = text.replace(
         "### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️",
         "### Tests for User Story 3 (if requested or lane-required) ⚠️",
-    )
-    text = text.replace(
+)
+text = text.replace(
         "- [ ] TXXX Run quickstart.md validation",
         "- [ ] TXXX Record the selected risk/validation lane and run the matching plan.md/quickstart.md checks",
-    )
-    text = text.replace(
+)
+text = text.replace(
         "- [ ] TXXX Record the selected validation lane and run the matching plan.md/quickstart.md checks",
         "- [ ] TXXX Record the selected risk/validation lane and run the matching plan.md/quickstart.md checks",
+)
+if "Record the selected risk/validation lane" not in text:
+    raise SystemExit(
+        "speckit-bootstrap: upstream tasks-template.md changed; risk-lane task was not applied"
     )
-    tasks.write_text(text, encoding="utf-8")
+tasks.write_text(text, encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: ensured risk-lane guidance in Spec Kit templates"
+}
+
+ensure_issue_canon_project_files() {
+  local extension="$PROJECT_DIR/.specify/extensions/github-issue-canon"
+  [[ -d "$extension" ]] || {
+    echo "speckit-bootstrap: github-issue-canon extension is missing" >&2
+    return 1
+  }
+
+  python3 - "$PROJECT_DIR" "$extension" <<'PY'
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+root = Path(sys.argv[1])
+extension = Path(sys.argv[2])
+managed_marker = "<!-- managed-by: github-issue-canon -->"
+changed = []
+preserved = []
+
+
+def atomic_write(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        os.replace(tmp_name, path)
+    except BaseException:
+        Path(tmp_name).unlink(missing_ok=True)
+        raise
+
+
+def install(rel_source: str, rel_target: str, refresh_managed: bool = False) -> None:
+    source = extension / "templates" / rel_source
+    target = root / rel_target
+    content = source.read_text(encoding="utf-8")
+    if not target.exists():
+        atomic_write(target, content)
+        changed.append(rel_target)
+        return
+    current = target.read_text(encoding="utf-8", errors="ignore")
+    if current == content:
+        return
+    if refresh_managed and managed_marker in current:
+        atomic_write(target, content)
+        changed.append(rel_target)
+        return
+    preserved.append(rel_target)
+
+
+install(
+    "docs/agent-guidance/github-issue-canon.md",
+    "docs/agent-guidance/github-issue-canon.md",
+    refresh_managed=True,
+)
+install("github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/config.yml")
+install(
+    "github/ISSUE_TEMPLATE/spec-kit-work-item.yml",
+    ".github/ISSUE_TEMPLATE/spec-kit-work-item.yml",
+)
+install("github/pull_request_template.md", ".github/pull_request_template.md")
+
+if changed:
+    print("speckit-bootstrap: installed/refreshed issue canon files:")
+    for path in changed:
+        print(f"  - {path}")
+if preserved:
+    print("speckit-bootstrap: preserved user-owned issue canon files:", file=sys.stderr)
+    for path in preserved:
+        print(f"  - {path}", file=sys.stderr)
+PY
 }
 
 ensure_ponytail_agent_instructions() {
@@ -590,41 +1393,108 @@ run_agent_context_update() {
 
   local specify_bin
   local specify_tool_bin=""
+  local specify_shebang=""
   local uv_specify_tool_bin="$HOME/.local/share/uv/tools/specify-cli/bin"
   specify_bin="$(command -v specify 2>/dev/null || true)"
   if [[ -n "$specify_bin" ]]; then
-    specify_tool_bin="$(cd "$(dirname "$specify_bin")" && pwd)"
+    specify_shebang="$(sed -n '1s/^#!//p' "$specify_bin")"
+    if [[ -x "$specify_shebang" ]]; then
+      specify_tool_bin="$(cd "$(dirname "$specify_shebang")" && pwd)"
+    else
+      specify_tool_bin="$(cd "$(dirname "$specify_bin")" && pwd)"
+    fi
   fi
 
   if [[ -n "$specify_tool_bin" && -x "$specify_tool_bin/python3" ]]; then
-    PATH="$specify_tool_bin:$PATH" "$script" || true
+    PATH="$specify_tool_bin:$PATH" "$script"
   elif [[ -x "$uv_specify_tool_bin/python3" ]]; then
-    PATH="$uv_specify_tool_bin:$PATH" "$script" || true
+    PATH="$uv_specify_tool_bin:$PATH" "$script"
   else
-    "$script" || true
+    "$script"
   fi
+}
+
+acquire_global_lock() {
+  local agents_root="$HOME/.agents"
+  local owner=""
+  mkdir -p "$agents_root"
+  GLOBAL_LOCK_DIR="$agents_root/.speckit-bootstrap.lock"
+  if ! mkdir "$GLOBAL_LOCK_DIR" 2>/dev/null; then
+    if [[ -f "$GLOBAL_LOCK_DIR/pid" ]]; then
+      owner="$(sed -n '1p' "$GLOBAL_LOCK_DIR/pid")"
+    fi
+    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -f "$GLOBAL_LOCK_DIR/pid"
+      if rmdir "$GLOBAL_LOCK_DIR" 2>/dev/null && mkdir "$GLOBAL_LOCK_DIR" 2>/dev/null; then
+        echo "speckit-bootstrap: recovered a stale global skills lock from PID $owner"
+      else
+        echo "speckit-bootstrap: could not recover stale global skills lock: $GLOBAL_LOCK_DIR" >&2
+        return 1
+      fi
+    else
+      echo "speckit-bootstrap: another bootstrap is updating global skills: $GLOBAL_LOCK_DIR" >&2
+      return 1
+    fi
+  fi
+  printf '%s\n' "$$" > "$GLOBAL_LOCK_DIR/pid"
+}
+
+release_global_lock() {
+  [[ -n "$GLOBAL_LOCK_DIR" ]] || return 0
+  rm -f "$GLOBAL_LOCK_DIR/pid"
+  rmdir "$GLOBAL_LOCK_DIR" 2>/dev/null || true
+  GLOBAL_LOCK_DIR=""
 }
 
 sync_global_skills() {
   local local_skills="$PROJECT_DIR/.agents/skills"
-  local global_skills="$HOME/.agents/skills"
+  local agents_root="$HOME/.agents"
+  local global_skills="$agents_root/skills"
+  local stage
+  local backup="$agents_root/.skills.backup.$$"
 
   if ! compgen -G "$local_skills/speckit-*" >/dev/null; then
     echo "speckit-bootstrap: no local speckit skills generated in $local_skills" >&2
-    exit 1
+    return 1
   fi
 
-  mkdir -p "$global_skills"
-  rm -rf "$global_skills"/speckit-*
+  mkdir -p "$agents_root"
+  stage="$(mktemp -d "$agents_root/.skills.stage.XXXXXX")"
+  if [[ -d "$global_skills" ]]; then
+    cp -R "$global_skills/." "$stage/"
+  fi
 
   local d name
   for d in "$local_skills"/speckit-*; do
     [[ -d "$d" ]] || continue
     name="$(basename "$d")"
-    cp -R "$d" "$global_skills/$name"
+    if [[ ! -f "$d/SKILL.md" ]]; then
+      rm -rf "$stage"
+      echo "speckit-bootstrap: generated skill is missing SKILL.md: $d" >&2
+      return 1
+    fi
+    rm -rf "${stage:?}/$name"
+    cp -R "$d" "$stage/$name"
   done
 
-  echo "speckit-bootstrap: synced global skills to $global_skills"
+  if ! compgen -G "$stage/speckit-*/SKILL.md" >/dev/null; then
+    rm -rf "$stage"
+    echo "speckit-bootstrap: staged global skill set failed validation" >&2
+    return 1
+  fi
+
+  if [[ -d "$global_skills" ]]; then
+    mv "$global_skills" "$backup"
+  fi
+  if ! mv "$stage" "$global_skills"; then
+    [[ ! -d "$backup" ]] || mv "$backup" "$global_skills"
+    rm -rf "$stage"
+    echo "speckit-bootstrap: atomic global skill update failed; restored the previous set" >&2
+    return 1
+  fi
+  rm -rf "$backup"
+
+  echo "speckit-bootstrap: atomically synced global skills to $global_skills"
 }
 
 clean_local_skill_duplicates() {
@@ -647,10 +1517,9 @@ clean_caches() {
 }
 
 hide_install_metadata_diffs() {
-  [[ "$TRACK_INSTALL_METADATA" != "1" ]] || return 0
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 
-  local file marked=0
+  local file changed=0
   for file in \
     ".specify/init-options.json" \
     ".specify/integration.json" \
@@ -660,13 +1529,21 @@ hide_install_metadata_diffs() {
     ".specify/workflows/workflow-registry.json"
   do
     if git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
-      git update-index --skip-worktree "$file"
-      marked=1
+      if [[ "$TRACK_INSTALL_METADATA" == "1" ]]; then
+        git update-index --no-skip-worktree "$file"
+      else
+        git update-index --skip-worktree "$file"
+      fi
+      changed=1
     fi
   done
 
-  if [[ "$marked" -eq 1 ]]; then
-    echo "speckit-bootstrap: hid refresh-only Spec Kit install metadata from git diff"
+  if [[ "$changed" -eq 1 ]]; then
+    if [[ "$TRACK_INSTALL_METADATA" == "1" ]]; then
+      echo "speckit-bootstrap: exposed Spec Kit install metadata for audit/release diff"
+    else
+      echo "speckit-bootstrap: hid refresh-only Spec Kit install metadata from git diff"
+    fi
   fi
 }
 
@@ -693,57 +1570,523 @@ ensure_codex_integration() {
 }
 
 init_spec_kit_project() {
-  if SPECIFY_INIT_DIR="$PROJECT_DIR" specify init --here --integration codex --script sh --force; then
+  local -a args
+  args=(init --here --integration codex --script sh --force)
+  if ! command -v codex >/dev/null 2>&1; then
+    args+=(--ignore-agent-tools)
+  fi
+
+  if SPECIFY_INIT_DIR="$PROJECT_DIR" specify "${args[@]}"; then
     return
   fi
 
   echo "speckit-bootstrap: retrying Spec Kit init with legacy branch numbering option"
-  SPECIFY_INIT_DIR="$PROJECT_DIR" specify init --here --integration codex --script sh --branch-numbering sequential --force
+  args+=(--branch-numbering sequential)
+  SPECIFY_INIT_DIR="$PROJECT_DIR" specify "${args[@]}"
 }
 
-install_cli
-require_cmd specify
-ensure_user_extension_catalog
-ensure_ponytail_codex_plugin
+write_lock_file() {
+  local path
+  path="$(lock_file)"
+  local ponytail_enabled=true
+  local ponytail_version="$RESOLVED_PONYTAIL_VERSION"
+  local ponytail_ref="$RESOLVED_PONYTAIL_REF"
+  local ponytail_marketplace_sha256="$RESOLVED_PONYTAIL_MARKETPLACE_SHA256"
+  if [[ "$SKIP_PONYTAIL" -eq 1 ]]; then
+    ponytail_enabled=false
+    ponytail_version="disabled"
+    ponytail_ref="disabled"
+    ponytail_marketplace_sha256="disabled"
+  fi
 
-cd "$PROJECT_DIR"
+  python3 - \
+    "$path" \
+    "$BOOTSTRAP_VERSION" \
+    "$RESOLVED_SPEC_KIT_VERSION" \
+    "$RESOLVED_SPEC_KIT_REF" \
+    "$RESOLVED_ISSUE_CANON_VERSION" \
+    "$RESOLVED_ISSUE_CANON_REF" \
+    "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" \
+    "$RESOLVED_ISSUE_CANON_URL" \
+    "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" \
+    "$RESOLVED_AGENT_CONTEXT_VERSION" \
+    "$RESOLVED_AGENT_CONTEXT_MANIFEST_HASH" \
+    "$RESOLVED_GIT_EXTENSION_VERSION" \
+    "$RESOLVED_GIT_EXTENSION_MANIFEST_HASH" \
+    "$RESOLVED_WORKFLOW_VERSION" \
+    "$RESOLVED_WORKFLOW_SHA256" \
+    "$ponytail_enabled" \
+    "$ponytail_version" \
+    "$ponytail_ref" \
+    "$ponytail_marketplace_sha256" <<'PY'
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
 
-if [[ ! -d ".specify" ]]; then
-  echo "speckit-bootstrap: initializing Spec Kit in $PROJECT_DIR"
-  init_spec_kit_project
-else
-  echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
-  ensure_codex_integration
-  specify workflow add speckit
+path = Path(sys.argv[1])
+data = {
+    "schema_version": 1,
+    "bootstrap_version": sys.argv[2],
+    "spec_kit": {
+        "version": sys.argv[3],
+        "ref": sys.argv[4],
+        "source": f"git+https://github.com/github/spec-kit.git@{sys.argv[4]}",
+    },
+    "github_issue_canon": {
+        "version": sys.argv[5],
+        "ref": sys.argv[6],
+        "installed_version": sys.argv[7],
+        "source_url": sys.argv[8],
+        "manifest_hash": sys.argv[9],
+    },
+    "extensions": {
+        "agent_context": {
+            "version": sys.argv[10],
+            "manifest_hash": sys.argv[11],
+        },
+        "git": {
+            "version": sys.argv[12],
+            "manifest_hash": sys.argv[13],
+        },
+    },
+    "workflow": {
+        "id": "speckit",
+        "version": sys.argv[14],
+        "sha256": sys.argv[15],
+    },
+    "ponytail": {
+        "enabled": sys.argv[16] == "true",
+        "version": sys.argv[17],
+        "ref": sys.argv[18],
+        "marketplace_sha256": sys.argv[19],
+    },
+}
+content = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+path.parent.mkdir(parents=True, exist_ok=True)
+if path.exists() and path.read_text(encoding="utf-8") == content:
+    raise SystemExit(0)
+fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    os.replace(tmp_name, path)
+except BaseException:
+    Path(tmp_name).unlink(missing_ok=True)
+    raise
+PY
+
+  echo "speckit-bootstrap: wrote reproducibility lock at ${path#"$PROJECT_DIR"/}"
+}
+
+print_plan() {
+  local ponytail="skipped"
+  if [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
+    ponytail="$RESOLVED_PONYTAIL_VERSION"
+  fi
+
+  if [[ "$OUTPUT_JSON" -eq 1 ]]; then
+    python3 - \
+      "$PROJECT_DIR" \
+      "$RESOLVED_SPEC_KIT_VERSION" \
+      "$RESOLVED_SPEC_KIT_REF" \
+      "$RESOLVED_ISSUE_CANON_VERSION" \
+      "$RESOLVED_ISSUE_CANON_REF" \
+      "$RESOLVED_ISSUE_CANON_URL" \
+      "$ponytail" \
+      "$RESOLVED_PONYTAIL_REF" \
+      "$FROZEN" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "status": "planned",
+    "project": sys.argv[1],
+    "frozen": sys.argv[9] == "1",
+    "spec_kit": {"version": sys.argv[2], "ref": sys.argv[3]},
+    "github_issue_canon": {"version": sys.argv[4], "ref": sys.argv[5], "source_url": sys.argv[6]},
+    "ponytail": {"version": sys.argv[7], "ref": sys.argv[8]},
+}, ensure_ascii=False, sort_keys=True))
+PY
+    return
+  fi
+
+  echo "speckit-bootstrap: dry-run plan"
+  echo "  project: $PROJECT_DIR"
+  echo "  frozen: $([[ "$FROZEN" -eq 1 ]] && echo yes || echo no)"
+  echo "  Spec Kit: $RESOLVED_SPEC_KIT_VERSION"
+  echo "  Spec Kit ref: $RESOLVED_SPEC_KIT_REF"
+  echo "  github-issue-canon: $RESOLVED_ISSUE_CANON_VERSION"
+  echo "  github-issue-canon ref: $RESOLVED_ISSUE_CANON_REF"
+  echo "  github-issue-canon source: $RESOLVED_ISSUE_CANON_URL"
+  echo "  Ponytail: $ponytail"
+  [[ "$SKIP_PONYTAIL" -eq 1 ]] || echo "  Ponytail ref: $RESOLVED_PONYTAIL_REF"
+  echo "  mutations: project .specify/AGENTS.md/.github, user catalogs/plugins/global skills"
+}
+
+verify_bootstrap() {
+  local errors=0
+  local path
+  local installed
+  local installed_ref
+  local actual_hash
+  local marketplace_info
+  local marketplace_type
+  local marketplace_source
+  local marketplace_target
+  local descriptor
+  local required=(
+    ".specify"
+    "AGENTS.md"
+    ".specify/speckit-bootstrap.lock.json"
+    ".specify/extensions/.registry"
+    ".specify/workflows/workflow-registry.json"
+    ".specify/workflows/speckit/workflow.yml"
+    "docs/agent-guidance/github-issue-canon.md"
+    ".github/ISSUE_TEMPLATE/config.yml"
+    ".github/ISSUE_TEMPLATE/spec-kit-work-item.yml"
+    ".github/pull_request_template.md"
+  )
+
+  for path in "${required[@]}"; do
+    if [[ ! -e "$PROJECT_DIR/$path" ]]; then
+      echo "speckit-bootstrap: doctor missing $path" >&2
+      errors=$((errors + 1))
+    fi
+  done
+
+  if ! grep -Fq '<!-- SPECKIT GITHUB ISSUE START -->' "$PROJECT_DIR/AGENTS.md" 2>/dev/null; then
+    echo "speckit-bootstrap: doctor missing managed GitHub instructions" >&2
+    errors=$((errors + 1))
+  fi
+  if ! grep -Fq '<!-- SPECKIT RELEASE VERSIONING START -->' "$PROJECT_DIR/AGENTS.md" 2>/dev/null; then
+    echo "speckit-bootstrap: doctor missing release/versioning instructions" >&2
+    errors=$((errors + 1))
+  fi
+  if ! compgen -G "$HOME/.agents/skills/speckit-*/SKILL.md" >/dev/null; then
+    echo "speckit-bootstrap: doctor found no global speckit skills" >&2
+    errors=$((errors + 1))
+  fi
+
+  if ! command -v specify >/dev/null 2>&1; then
+    echo "speckit-bootstrap: doctor did not find the specify CLI" >&2
+    errors=$((errors + 1))
+  elif [[ "$RESOLVED_SPEC_KIT_VERSION" == v* ]]; then
+    installed="$(normalize_tag "$(specify --version | awk '{print $NF}')")"
+    if [[ "$installed" != "$RESOLVED_SPEC_KIT_VERSION" ]]; then
+      echo "speckit-bootstrap: doctor found specify $installed, expected $RESOLVED_SPEC_KIT_VERSION" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ -n "$RESOLVED_AGENT_CONTEXT_VERSION" ]]; then
+    installed="$(extension_version agent-context)"
+    actual_hash="$(extension_manifest_hash agent-context)"
+    if [[ "$installed" != "$RESOLVED_AGENT_CONTEXT_VERSION" ||
+          "$actual_hash" != "$RESOLVED_AGENT_CONTEXT_MANIFEST_HASH" ]]; then
+      echo "speckit-bootstrap: doctor found agent-context state that differs from the lock" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ -n "$RESOLVED_GIT_EXTENSION_VERSION" ]]; then
+    installed="$(extension_version git)"
+    actual_hash="$(extension_manifest_hash git)"
+    if [[ "$installed" != "$RESOLVED_GIT_EXTENSION_VERSION" ||
+          "$actual_hash" != "$RESOLVED_GIT_EXTENSION_MANIFEST_HASH" ]]; then
+      echo "speckit-bootstrap: doctor found git extension state that differs from the lock" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ -n "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" ]]; then
+    installed="$(extension_version github-issue-canon)"
+    actual_hash="$(extension_manifest_hash github-issue-canon)"
+    if [[ "$installed" != "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" ||
+          "$actual_hash" != "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" ]]; then
+      echo "speckit-bootstrap: doctor found github-issue-canon state that differs from the lock" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ -n "$RESOLVED_WORKFLOW_VERSION" && -f "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml" ]]; then
+    installed="$(workflow_version)"
+    actual_hash="$(sha256_path "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml")"
+    if [[ "$installed" != "$RESOLVED_WORKFLOW_VERSION" || "$actual_hash" != "$RESOLVED_WORKFLOW_SHA256" ]]; then
+      echo "speckit-bootstrap: doctor found speckit workflow state that differs from the lock" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
+    installed="$(installed_ponytail_version)"
+    if [[ -z "$installed" ]]; then
+      echo "speckit-bootstrap: doctor did not find the Ponytail plugin" >&2
+      errors=$((errors + 1))
+    elif [[ -n "$RESOLVED_PONYTAIL_VERSION" && "$(normalize_tag "$installed")" != "$RESOLVED_PONYTAIL_VERSION" ]]; then
+      echo "speckit-bootstrap: doctor found Ponytail v$installed, expected $RESOLVED_PONYTAIL_VERSION" >&2
+      errors=$((errors + 1))
+    fi
+    installed_ref="$(installed_ponytail_ref)"
+    if [[ -n "$RESOLVED_PONYTAIL_REF" && "$installed_ref" != "$RESOLVED_PONYTAIL_REF" ]]; then
+      echo "speckit-bootstrap: doctor found Ponytail ref '$installed_ref', expected $RESOLVED_PONYTAIL_REF" >&2
+      errors=$((errors + 1))
+    fi
+    if ! ponytail_marketplace_configured; then
+      echo "speckit-bootstrap: doctor did not find the Ponytail marketplace" >&2
+      errors=$((errors + 1))
+    else
+      marketplace_info="$(ponytail_marketplace_info)"
+      IFS=$'\t' read -r marketplace_type marketplace_source <<< "$marketplace_info"
+      marketplace_target="$(ponytail_managed_marketplace_path)"
+      if [[ "$marketplace_type" != "local" || "$marketplace_source" != "$marketplace_target" ]]; then
+        echo "speckit-bootstrap: doctor found an unmanaged Ponytail marketplace source" >&2
+        errors=$((errors + 1))
+      fi
+    fi
+    descriptor="$(ponytail_managed_marketplace_path)/.agents/plugins/marketplace.json"
+    if [[ ! -f "$descriptor" ]]; then
+      echo "speckit-bootstrap: doctor did not find the managed Ponytail descriptor" >&2
+      errors=$((errors + 1))
+    else
+      actual_hash="$(sha256_path "$descriptor")"
+      if [[ "$(ponytail_descriptor_ref)" != "$RESOLVED_PONYTAIL_REF" ||
+            "$actual_hash" != "$RESOLVED_PONYTAIL_MARKETPLACE_SHA256" ]]; then
+        echo "speckit-bootstrap: doctor found Ponytail marketplace descriptor drift" >&2
+        errors=$((errors + 1))
+      fi
+    fi
+    if [[ ! -f "$PROJECT_DIR/$PONYTAIL_UPSTREAM_AGENTS_PATH" ]]; then
+      echo "speckit-bootstrap: doctor missing $PONYTAIL_UPSTREAM_AGENTS_PATH" >&2
+      errors=$((errors + 1))
+    fi
+    if ! grep -Fq '<!-- SPECKIT PONYTAIL START -->' "$PROJECT_DIR/AGENTS.md" 2>/dev/null; then
+      echo "speckit-bootstrap: doctor missing Ponytail instructions" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ "$TRACK_INSTALL_METADATA" == "1" ]] && \
+     git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if git -C "$PROJECT_DIR" ls-files -v \
+      .specify/init-options.json \
+      .specify/integration.json \
+      .specify/integrations/speckit.manifest.json \
+      .specify/integrations/codex.manifest.json \
+      .specify/extensions/.registry \
+      .specify/workflows/workflow-registry.json | grep -q '^S '; then
+      echo "speckit-bootstrap: doctor found hidden metadata in audit mode" >&2
+      errors=$((errors + 1))
+    fi
+  fi
+
+  if [[ "$errors" -ne 0 ]]; then
+    echo "speckit-bootstrap: doctor failed with $errors problem(s)" >&2
+    return 1
+  fi
+
+  echo "speckit-bootstrap: doctor OK"
+}
+
+print_final_summary() {
+  local status="$1"
+  local ponytail="skipped"
+  if [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
+    ponytail="$PONYTAIL_PLUGIN_STATUS"
+  fi
+
+  if [[ "$OUTPUT_JSON" -eq 1 ]]; then
+    python3 - \
+      "$status" \
+      "$BOOTSTRAP_VERSION" \
+      "$PROJECT_DIR" \
+      "$RESOLVED_SPEC_KIT_VERSION" \
+      "$RESOLVED_SPEC_KIT_REF" \
+      "$RESOLVED_ISSUE_CANON_VERSION" \
+      "$RESOLVED_ISSUE_CANON_REF" \
+      "$ponytail" \
+      "$RESOLVED_PONYTAIL_REF" \
+      "$PONYTAIL_UPSTREAM_AGENTS_STATUS" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "status": sys.argv[1],
+    "bootstrap_version": sys.argv[2],
+    "project": sys.argv[3],
+    "spec_kit": {"version": sys.argv[4], "ref": sys.argv[5]},
+    "github_issue_canon": {"version": sys.argv[6], "ref": sys.argv[7]},
+    "ponytail": {"status": sys.argv[8], "ref": sys.argv[9]},
+    "ponytail_guidance": sys.argv[10],
+}, ensure_ascii=False, sort_keys=True))
+PY
+    return
+  fi
+
+  echo
+  echo "speckit-bootstrap: $status"
+  echo "  bootstrap: v$BOOTSTRAP_VERSION"
+  echo "  project: $PROJECT_DIR"
+  [[ -z "$RESOLVED_SPEC_KIT_VERSION" ]] || echo "  Spec Kit: $RESOLVED_SPEC_KIT_VERSION"
+  [[ -z "$RESOLVED_SPEC_KIT_REF" ]] || echo "  Spec Kit ref: $RESOLVED_SPEC_KIT_REF"
+  [[ -z "$RESOLVED_ISSUE_CANON_VERSION" ]] || echo "  github-issue-canon: $RESOLVED_ISSUE_CANON_VERSION"
+  [[ -z "$RESOLVED_ISSUE_CANON_REF" ]] || echo "  github-issue-canon ref: $RESOLVED_ISSUE_CANON_REF"
+  echo "  global skills: $HOME/.agents/skills/speckit-*"
+  echo "  local skills: $([[ "$KEEP_LOCAL_SKILLS" -eq 1 ]] && echo kept || echo removed)"
+  echo "  ponytail: $ponytail"
+  [[ -z "$RESOLVED_PONYTAIL_REF" ]] || echo "  ponytail ref: $RESOLVED_PONYTAIL_REF"
+  echo "  ponytail upstream AGENTS.md: $PONYTAIL_UPSTREAM_AGENTS_STATUS"
+}
+
+main() {
+  parse_args "$@"
+
+  case "$MODE" in
+    help)
+      usage
+      return 0
+      ;;
+    version)
+      printf 'speckit-bootstrap %s\n' "$BOOTSTRAP_VERSION"
+      return 0
+      ;;
+  esac
+
+  require_cmd git
+  require_cmd python3
+
+  if [[ "$MODE" == "doctor" ]]; then
+    cd "$PROJECT_DIR"
+    if [[ -f "$(lock_file)" ]]; then
+      if [[ "$(read_lock_value "$(lock_file)" schema_version)" != "1" ]]; then
+        echo "speckit-bootstrap: unsupported lock schema in $(lock_file)" >&2
+        return 1
+      fi
+      RESOLVED_SPEC_KIT_VERSION="$(read_lock_value "$(lock_file)" spec_kit.version)"
+      RESOLVED_SPEC_KIT_REF="$(read_lock_value "$(lock_file)" spec_kit.ref)"
+      RESOLVED_ISSUE_CANON_VERSION="$(read_lock_value "$(lock_file)" github_issue_canon.version)"
+      RESOLVED_ISSUE_CANON_REF="$(read_lock_value "$(lock_file)" github_issue_canon.ref)"
+      RESOLVED_ISSUE_CANON_INSTALLED_VERSION="$(read_lock_value "$(lock_file)" github_issue_canon.installed_version)"
+      RESOLVED_ISSUE_CANON_URL="$(read_lock_value "$(lock_file)" github_issue_canon.source_url)"
+      RESOLVED_ISSUE_CANON_MANIFEST_HASH="$(read_lock_value "$(lock_file)" github_issue_canon.manifest_hash)"
+      RESOLVED_AGENT_CONTEXT_VERSION="$(read_lock_value "$(lock_file)" extensions.agent_context.version)"
+      RESOLVED_AGENT_CONTEXT_MANIFEST_HASH="$(read_lock_value "$(lock_file)" extensions.agent_context.manifest_hash)"
+      RESOLVED_GIT_EXTENSION_VERSION="$(read_lock_value "$(lock_file)" extensions.git.version)"
+      RESOLVED_GIT_EXTENSION_MANIFEST_HASH="$(read_lock_value "$(lock_file)" extensions.git.manifest_hash)"
+      RESOLVED_WORKFLOW_VERSION="$(read_lock_value "$(lock_file)" workflow.version)"
+      RESOLVED_WORKFLOW_SHA256="$(read_lock_value "$(lock_file)" workflow.sha256)"
+      require_commit_sha "$RESOLVED_SPEC_KIT_REF" "Spec Kit"
+      if [[ "$RESOLVED_ISSUE_CANON_REF" != "custom" ]]; then
+        require_commit_sha "$RESOLVED_ISSUE_CANON_REF" github-issue-canon
+      fi
+      if [[ "$(read_lock_value "$(lock_file)" ponytail.enabled)" == "false" ]]; then
+        SKIP_PONYTAIL=1
+      else
+        RESOLVED_PONYTAIL_VERSION="$(read_lock_value "$(lock_file)" ponytail.version)"
+        RESOLVED_PONYTAIL_REF="$(read_lock_value "$(lock_file)" ponytail.ref)"
+        RESOLVED_PONYTAIL_MARKETPLACE_SHA256="$(read_lock_value "$(lock_file)" ponytail.marketplace_sha256)"
+        require_safe_version_tag "$RESOLVED_PONYTAIL_VERSION" Ponytail
+        require_commit_sha "$RESOLVED_PONYTAIL_REF" Ponytail
+        PONYTAIL_PLUGIN_STATUS="installed"
+        [[ ! -f "$PROJECT_DIR/$PONYTAIL_UPSTREAM_AGENTS_PATH" ]] || PONYTAIL_UPSTREAM_AGENTS_STATUS="synced"
+      fi
+    fi
+    if verify_bootstrap; then
+      print_final_summary ready
+      return 0
+    fi
+    print_final_summary failed
+    return 1
+  fi
+
+  prepare_versions
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    print_plan
+    return 0
+  fi
+
+  if [[ "$SKIP_CLI_UPDATE" -eq 0 ]]; then
+    require_cmd uv
+  fi
+
+  install_cli
+  require_cmd specify
+  ensure_user_extension_catalog
+  ensure_ponytail_codex_plugin
+
+  cd "$PROJECT_DIR"
+
+  if [[ ! -d ".specify" ]]; then
+    echo "speckit-bootstrap: initializing Spec Kit in $PROJECT_DIR"
+    init_spec_kit_project
+  else
+    echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
+    ensure_codex_integration
+    if [[ "$FROZEN" -eq 1 ]]; then
+      echo "speckit-bootstrap: frozen mode preserved the locked workflow and extensions"
+    else
+      specify workflow add speckit
+    fi
+  fi
+
+  if [[ "$FROZEN" -eq 1 ]]; then
+    verify_locked_workflow
+    verify_locked_extension \
+      agent-context \
+      "$RESOLVED_AGENT_CONTEXT_VERSION" \
+      "$RESOLVED_AGENT_CONTEXT_MANIFEST_HASH" \
+      ".agents/skills/speckit-agent-context-update/SKILL.md"
+    verify_locked_extension \
+      git \
+      "$RESOLVED_GIT_EXTENSION_VERSION" \
+      "$RESOLVED_GIT_EXTENSION_MANIFEST_HASH" \
+      ".agents/skills/speckit-git-feature/SKILL.md"
+    verify_locked_extension \
+      github-issue-canon \
+      "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" \
+      "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" \
+      ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+  else
+    ensure_extension agent-context ".agents/skills/speckit-agent-context-update/SKILL.md"
+    ensure_extension git ".agents/skills/speckit-git-feature/SKILL.md"
+    specify extension update agent-context
+    specify extension update git
+    ensure_extension_from_url \
+      github-issue-canon \
+      "$RESOLVED_ISSUE_CANON_URL" \
+      "$RESOLVED_ISSUE_CANON_VERSION" \
+      ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+    capture_project_dependency_state
+  fi
+
+  ensure_agent_context_config
+  configure_git_auto_commit
+  ensure_risk_lane_templates
+  run_agent_context_update
+  ensure_issue_canon_project_files
+  ensure_github_agent_instructions
+  ensure_release_versioning_instructions
+  ensure_ponytail_upstream_agents
+  ensure_ponytail_agent_instructions
+
+  acquire_global_lock
+  trap release_global_lock EXIT INT TERM
+  sync_global_skills
+  release_global_lock
+  trap - EXIT INT TERM
+
+  clean_local_skill_duplicates
+  clean_caches
+  write_lock_file
+  hide_install_metadata_diffs
+
+  specify self check
+  verify_bootstrap
+  print_final_summary ready
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
 fi
-
-ensure_extension agent-context ".agents/skills/speckit-agent-context-update/SKILL.md"
-ensure_extension git ".agents/skills/speckit-git-feature/SKILL.md"
-ensure_extension_from_url \
-  github-issue-canon \
-  "$GITHUB_ISSUE_CANON_EXTENSION_URL"
-specify extension update
-
-ensure_agent_context_config
-configure_git_auto_commit
-ensure_risk_lane_templates
-run_agent_context_update
-ensure_github_agent_instructions
-ensure_release_versioning_instructions
-ensure_ponytail_upstream_agents
-ensure_ponytail_agent_instructions
-
-sync_global_skills
-clean_local_skill_duplicates
-clean_caches
-hide_install_metadata_diffs
-
-specify self check
-
-echo
-echo "speckit-bootstrap: ready"
-echo "  project: $PROJECT_DIR"
-echo "  global skills: $HOME/.agents/skills/speckit-*"
-echo "  local skills: $([[ "$KEEP_LOCAL_SKILLS" -eq 1 ]] && echo kept || echo removed)"
-echo "  ponytail: $([[ "$SKIP_PONYTAIL" -eq 1 ]] && echo skipped || echo plugin-managed)"
-echo "  ponytail upstream AGENTS.md: $PONYTAIL_UPSTREAM_AGENTS_STATUS"

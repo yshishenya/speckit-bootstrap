@@ -1,0 +1,55 @@
+name: Publish verified release assets
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-assets-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build and upload installer assets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # Upload assets to the already-published release.
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      - name: Validate release version and tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(bin/speckit-bootstrap --version | awk '{print $2}')"
+          test "v$version" = "$RELEASE_TAG"
+          bash -n bin/speckit-bootstrap install.sh tests/unit.sh tests/smoke-live.sh
+          bash tests/unit.sh
+
+      - name: Build checksummed assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          install -m 0755 bin/speckit-bootstrap dist/speckit-bootstrap
+          cd dist
+          sha256sum speckit-bootstrap > speckit-bootstrap.sha256
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "$RELEASE_TAG"
+          dist/speckit-bootstrap
+          dist/speckit-bootstrap.sha256
+          --clobber
