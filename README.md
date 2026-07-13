@@ -6,8 +6,9 @@ The script updates official Spec Kit from `github/spec-kit`, initializes or
 refreshes the current project, installs bundled Spec Kit extensions, installs
 Yan's reusable `github-issue-canon` extension from GitHub, and syncs generated
 Codex skills into `~/.agents/skills`. It also installs/updates the Ponytail
-Codex plugin and project guidance. Every successful run records the exact
-resolved inputs in `.specify/speckit-bootstrap.lock.json`.
+Codex plugin and project guidance. Every successful non-frozen refresh records
+the exact resolved inputs and managed payload digests in
+`.specify/speckit-bootstrap.lock.json`.
 
 The bootstrap never changes upstream repositories. It does apply managed,
 project-local policy overlays to generated Spec Kit templates and `AGENTS.md`;
@@ -275,7 +276,8 @@ Rules for agents:
 - removes project-local duplicate skills by default;
 - installs project-local issue canon docs and GitHub templates without
   overwriting user-owned templates;
-- writes a version/source lock and runs post-install verification;
+- writes a version/source lock with full extension-tree and managed global-skill
+  digests, then runs post-install verification;
 - hides refresh-only Spec Kit install metadata from normal `git diff`, with an
   explicit audit mode that unhides it again.
 
@@ -339,7 +341,8 @@ The first non-frozen run is latest-first; every completed run is reproducible.
 - The installer resolves the latest published `speckit-bootstrap` release and
   verifies its release asset checksum.
 - Exact versions, commit refs, source URLs, Ponytail marketplace checksum,
-  core-extension manifest hashes, and the installed workflow SHA-256 are written to
+  complete core-extension tree digests, managed global-skill tree digests, and
+  the installed workflow SHA-256 are written to
   `.specify/speckit-bootstrap.lock.json`.
 
 To resolve current upstream releases and refresh the lock:
@@ -355,13 +358,15 @@ To replay the recorded set without resolving mutable upstream state:
 speckit-bootstrap /path/to/project --frozen
 ```
 
-Frozen mode also verifies an already-installed `specify` when combined with
-`--skip-cli-update`, and verifies the installed Ponytail version when Ponytail
-is enabled in the lock. Missing user-local Ponytail state is rebuilt only when
-the generated descriptor matches the locked checksum. Frozen mode regenerates
-Codex integration files with the commit-pinned
-Spec Kit CLI, but does not update the locked workflow or core extensions from
-mutable catalogs; version/hash drift fails the run.
+Frozen mode verifies both the version and exact source commit of an
+already-installed `specify` when combined with `--skip-cli-update`, and verifies
+the installed Ponytail version when Ponytail is enabled in the lock. Missing
+user-local Ponytail state is rebuilt only when the generated descriptor matches
+the locked checksum. Frozen mode regenerates Codex integration files with the
+commit-pinned Spec Kit CLI, but does not update the locked workflow or core
+extensions from mutable catalogs; version or payload drift fails the run. The
+lock itself is immutable during a frozen run, including when `--skip-ponytail`
+is used only to suppress the local plugin operation.
 
 For a controlled Spec Kit pin or rollback, refresh once with:
 
@@ -419,7 +424,7 @@ Modes:
 
 Options:
   --frozen              Read exact inputs from the project lock
-  --json                Emit the plan/final summary as JSON
+  --json                Emit only the plan/final JSON on stdout; logs use stderr
   --keep-local-skills   Keep generated project-local skill duplicates
   --skip-cli-update     Use the installed specify CLI
   --skip-ponytail       Do not install/update Ponytail or its guidance
@@ -475,7 +480,9 @@ SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 ## Verification
 
 The bootstrap runs `specify self check` and its own postcondition checks before
-reporting success. Re-run the read-only checks at any time:
+reporting success. Doctor verifies the installed CLI source commit, complete
+locked extension payloads, the workflow checksum, and every managed global
+skill digest. Re-run the read-only checks at any time:
 
 ```sh
 speckit-bootstrap . --doctor
@@ -503,8 +510,9 @@ github-issue-canon: OK (... Spec Kit issue(s) checked)
 
 The maintained compatibility targets are macOS with the system Bash 3.2 and
 Ubuntu with Bash 5. The live smoke test installs the pinned Spec Kit baseline
-in an isolated `HOME`, runs doctor, repeats in frozen mode, checks idempotence,
-rejects a deliberately tampered workflow, and verifies audit visibility.
+in an isolated `HOME`, validates JSON output, repeats in frozen mode, checks
+lock immutability and idempotence, rejects deliberately tampered workflow,
+extension, and global-skill payloads, and verifies audit visibility.
 
 ```sh
 bash -n bin/speckit-bootstrap install.sh tests/unit.sh tests/smoke-live.sh
@@ -516,9 +524,11 @@ SPEC_KIT_VERSION=v0.12.11 \
 
 GitHub Actions runs static/unit checks and pinned live smoke tests on macOS and
 Ubuntu. A scheduled job tests current upstream tags so upstream drift is found
-before users hit it. Publishing a SemVer GitHub Release uploads the executable
-and checksum assets consumed by `install.sh`; the release tag must match
-`speckit-bootstrap --version`.
+before users hit it. Release assets are built and tested in a read-only job;
+only a separate publishing job receives `contents: write`, and it never checks
+out or executes repository code. Publishing a SemVer GitHub Release uploads the
+executable and checksum assets consumed by `install.sh`; the release tag must
+match `speckit-bootstrap --version`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the release checklist and
 [SECURITY.md](SECURITY.md) for private vulnerability reporting.

@@ -48,6 +48,15 @@ All notable changes to this project are documented in this file.
   anchors drift, rather than silently claiming success.
 - Agent-context refresh now discovers the actual `specify` interpreter from its
   launcher before falling back to conventional uv paths.
+- Frozen runs no longer rewrite the lock when Ponytail is skipped, and
+  `--skip-cli-update` now verifies the installed CLI's exact locked source
+  commit rather than accepting a matching display version alone.
+- Signal handling now releases the global-skill lock and terminates with the
+  conventional signal status instead of continuing without mutual exclusion.
+- Ponytail marketplace paths are canonicalized so macOS `/var` and
+  `/private/var` aliases compare as the same managed source.
+- `--json` now reserves stdout for one machine-readable document and sends
+  human diagnostics to stderr.
 
 ### Security
 
@@ -55,6 +64,12 @@ All notable changes to this project are documented in this file.
   unverified sources.
 - Pinned third-party GitHub Actions by full commit SHA and reduced workflow
   permissions to the minimum required per workflow.
+- Lock schema v2 records complete extension trees and every managed global
+  skill, so doctor rejects executable payload or skill drift even when registry
+  metadata is unchanged.
+- Release assets are built and tested in a read-only job; the separate
+  `contents: write` publishing job only downloads and uploads the verified
+  artifact and never executes repository code.
 
 ## [0.5.2] - 2026-07-08
 

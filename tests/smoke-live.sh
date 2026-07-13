@@ -35,6 +35,15 @@ export PATH
 
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+doctor_json="$("$BOOTSTRAP" "$PROJECT" --doctor --json)"
+python3 - "$doctor_json" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+assert data["status"] == "ready"
+PY
+
 WORKFLOW="$PROJECT/.specify/workflows/speckit/workflow.yml"
 WORKFLOW_BACKUP="$SANDBOX/workflow.yml"
 cp "$WORKFLOW" "$WORKFLOW_BACKUP"
@@ -46,10 +55,39 @@ fi
 mv "$WORKFLOW_BACKUP" "$WORKFLOW"
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+EXTENSION_SCRIPT="$PROJECT/.specify/extensions/agent-context/scripts/bash/update-agent-context.sh"
+EXTENSION_BACKUP="$SANDBOX/update-agent-context.sh"
+cp -p "$EXTENSION_SCRIPT" "$EXTENSION_BACKUP"
+printf '\n# extension tamper probe\n' >> "$EXTENSION_SCRIPT"
+if "$BOOTSTRAP" "$PROJECT" --doctor >/dev/null 2>&1; then
+  echo 'smoke-live: doctor accepted an extension payload that differed from the lock' >&2
+  exit 1
+fi
+mv "$EXTENSION_BACKUP" "$EXTENSION_SCRIPT"
+"$BOOTSTRAP" "$PROJECT" --doctor
+
+GLOBAL_SKILL="$HOME/.agents/skills/speckit-plan/SKILL.md"
+GLOBAL_SKILL_BACKUP="$SANDBOX/speckit-plan-SKILL.md"
+cp -p "$GLOBAL_SKILL" "$GLOBAL_SKILL_BACKUP"
+printf '\n<!-- global skill tamper probe -->\n' >> "$GLOBAL_SKILL"
+if "$BOOTSTRAP" "$PROJECT" --doctor >/dev/null 2>&1; then
+  echo 'smoke-live: doctor accepted a managed global skill that differed from the lock' >&2
+  exit 1
+fi
+mv "$GLOBAL_SKILL_BACKUP" "$GLOBAL_SKILL"
+"$BOOTSTRAP" "$PROJECT" --doctor
+
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
+LOCK="$PROJECT/.specify/speckit-bootstrap.lock.json"
+LOCK_BEFORE="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
 "$BOOTSTRAP" "$PROJECT" --skip-cli-update --skip-ponytail --frozen
+LOCK_AFTER="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
+if [[ "$LOCK_BEFORE" != "$LOCK_AFTER" ]]; then
+  echo 'smoke-live: frozen bootstrap rewrote the reproducibility lock' >&2
+  exit 1
+fi
 if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
   echo 'smoke-live: a frozen repeat bootstrap was not idempotent' >&2
   git -C "$PROJECT" status --short >&2
@@ -64,4 +102,4 @@ if git -C "$PROJECT" ls-files -v .specify | grep -q '^S '; then
 fi
 
 SPECKIT_TRACK_INSTALL_METADATA=1 "$BOOTSTRAP" "$PROJECT" --doctor
-echo 'smoke-live: fresh install, doctor, frozen rerun, and audit mode passed'
+echo 'smoke-live: fresh install, integrity probes, JSON doctor, frozen rerun, and audit mode passed'
