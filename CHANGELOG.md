@@ -37,6 +37,8 @@ All notable changes to this project are documented in this file.
   installing the executable.
 - Frozen runs now preserve the locked catalog-backed workflow/core extensions
   and fail on version or hash drift instead of refreshing mutable catalog state.
+- The pinned compatibility baseline now uses `github-issue-canon` v0.2.6,
+  whose catalog and manual install path resolve to an immutable release tag.
 
 ### Fixed
 

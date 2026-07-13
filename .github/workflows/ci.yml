@@ -75,7 +75,7 @@ jobs:
       - name: Run live bootstrap smoke test
         env:
           SPEC_KIT_VERSION: v0.12.11
-          SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.2.5
+          SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.2.6
         run: bash tests/smoke-live.sh
 
   smoke-upstream-latest:

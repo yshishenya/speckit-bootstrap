@@ -518,7 +518,7 @@ extension, and global-skill payloads, and verifies audit visibility.
 bash -n bin/speckit-bootstrap install.sh tests/unit.sh tests/smoke-live.sh
 bash tests/unit.sh
 SPEC_KIT_VERSION=v0.12.11 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.2.5 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.2.6 \
   bash tests/smoke-live.sh
 ```
 
