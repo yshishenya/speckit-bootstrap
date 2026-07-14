@@ -1,0 +1,74 @@
+name: Upstream canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upstream-canary
+  cancel-in-progress: true
+
+jobs:
+  latest-core:
+    name: Latest Spec Kit and issue canon
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: '0.11.28'
+          enable-cache: true
+          cache-dependency-glob: ''
+          cache-suffix: upstream-canary-core
+          prune-cache: false
+          ignore-nothing-to-cache: true
+
+      - name: Run against current upstream releases
+        env:
+          SPEC_KIT_VERSION: latest
+          SPECKIT_GITHUB_ISSUE_CANON_VERSION: latest
+          SPECKIT_PONYTAIL: 0
+        run: bash tests/smoke-live.sh
+
+  latest-ponytail:
+    name: Current Codex and latest Ponytail
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+        with:
+          version: '0.11.28'
+          enable-cache: true
+          cache-dependency-glob: ''
+          cache-suffix: upstream-canary-ponytail
+          prune-cache: false
+          ignore-nothing-to-cache: true
+
+      - name: Install locked Codex CLI
+        run: |
+          npm ci --ignore-scripts --prefix tests/canary
+          echo "$GITHUB_WORKSPACE/tests/canary/node_modules/.bin" >> "$GITHUB_PATH"
+
+      - name: Run real Ponytail integration smoke
+        env:
+          SPEC_KIT_VERSION: latest
+          SPECKIT_GITHUB_ISSUE_CANON_VERSION: latest
+          SPECKIT_PONYTAIL_VERSION: latest
+          SPECKIT_PONYTAIL: 1
+        run: bash tests/smoke-live.sh

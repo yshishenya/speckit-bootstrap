@@ -1,83 +1,85 @@
-name: Publish verified release assets
+name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-assets-${{ github.event.release.tag_name }}
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Verify and build installer assets
+  package:
+    name: Build release package
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+    timeout-minutes: 5
     steps:
-      - name: Check out release tag
+      - name: Check out tagged source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate release version and tests
-        shell: bash
+      - name: Validate annotated release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
+          git cat-file -e "$RELEASE_TAG^{tag}"
+          git fetch origin main:refs/remotes/origin/main
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main
           version="$(bin/speckit-bootstrap --version | awk '{print $2}')"
           test "v$version" = "$RELEASE_TAG"
-          bash -n bin/speckit-bootstrap install.sh tests/unit.sh tests/smoke-live.sh
-          bash tests/unit.sh
 
-      - name: Build checksummed assets
-        shell: bash
+      - name: Build checksummed installer
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
           mkdir -p dist
           install -m 0755 bin/speckit-bootstrap dist/speckit-bootstrap
-          cd dist
-          sha256sum speckit-bootstrap > speckit-bootstrap.sha256
+          (cd dist && sha256sum speckit-bootstrap > speckit-bootstrap.sha256)
+          git for-each-ref \
+            --format='%(contents:subject)%0a%0a%(contents:body)' \
+            "refs/tags/$RELEASE_TAG" > dist/release-notes.md
+          test -s dist/release-notes.md
 
-      - name: Store verified release assets
+      - name: Upload immutable release artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: verified-release-assets
-          path: |
-            dist/speckit-bootstrap
-            dist/speckit-bootstrap.sha256
+          name: release-package
+          path: dist/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
 
   publish:
-    name: Upload verified installer assets
-    needs: build
+    name: Publish GitHub release
+    needs: package
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      actions: read # Download artifacts produced by the unprivileged build job.
-      contents: write # Upload assets to the already-published release.
-    env:
-      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      contents: write # Required only for `gh release create` after packaging succeeds.
     steps:
-      - name: Download verified release assets
+      - name: Download verified package
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: verified-release-assets
+          name: release-package
           path: dist
 
-      - name: Upload release assets
+      - name: Verify downloaded package
+        run: cd dist && sha256sum --check speckit-bootstrap.sha256
+
+      - name: Publish from annotated tag
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
         run: >-
-          gh release upload "$RELEASE_TAG"
+          gh release create "$RELEASE_TAG"
           --repo "$GITHUB_REPOSITORY"
+          --verify-tag
+          --title "$RELEASE_TAG - tested-bootstrap"
+          --notes-file dist/release-notes.md
           dist/speckit-bootstrap
           dist/speckit-bootstrap.sha256
-          --clobber

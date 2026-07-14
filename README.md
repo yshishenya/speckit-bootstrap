@@ -27,7 +27,7 @@ install a specific release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.6.1 bash
+  SPECKIT_BOOTSTRAP_VERSION=v0.7.0 bash
 ```
 
 This installs:
@@ -102,7 +102,7 @@ This refreshes:
 - official `specify-cli` from upstream `github/spec-kit`;
 - Codex Spec Kit integration files;
 - official `agent-context` and `git` extensions;
-- a tagged `github-issue-canon` extension archive from GitHub;
+- the checksummed `github-issue-canon` release asset from the approved catalog;
 - generated `speckit-*` skills in `~/.agents/skills`;
 - the Ponytail Codex plugin via Codex's plugin marketplace;
 - Ponytail's upstream `AGENTS.md` fallback in
@@ -333,16 +333,17 @@ The first non-frozen run is latest-first; every completed run is reproducible.
 
 - Official Spec Kit selects the latest upstream `v*` Git tag by default, then
   installs the commit SHA behind that tag.
-- `github-issue-canon` selects the latest `v*` tag and installs the immutable
-  commit archive behind it, not a mutable `main` ZIP.
+- `github-issue-canon` resolves the approved catalog entry, verifies that its
+  version has a real Git tag, and lets Spec Kit verify the versioned release
+  asset against the catalog-declared SHA-256 before installation.
 - Ponytail selects a tag, generates a versioned local marketplace descriptor
   whose plugin source is the tag's commit SHA, and verifies both installed
   version and ref before recording success.
 - The installer resolves the latest published `speckit-bootstrap` release and
   verifies its release asset checksum.
-- Exact versions, commit refs, source URLs, Ponytail marketplace checksum,
-  complete core-extension tree digests, managed global-skill tree digests, and
-  the installed workflow SHA-256 are written to
+- Exact versions, commit refs, source URLs, the issue-canon archive checksum,
+  Ponytail marketplace checksum, complete core-extension tree digests, managed
+  global-skill tree digests, and the installed workflow SHA-256 are written to
   `.specify/speckit-bootstrap.lock.json`.
 
 To resolve current upstream releases and refresh the lock:
@@ -515,20 +516,23 @@ lock immutability and idempotence, rejects deliberately tampered workflow,
 extension, and global-skill payloads, and verifies audit visibility.
 
 ```sh
-bash -n bin/speckit-bootstrap install.sh tests/unit.sh tests/smoke-live.sh
-bash tests/unit.sh
-SPEC_KIT_VERSION=v0.12.11 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.2.6 \
+bash tests/ci-local.sh
+SPEC_KIT_VERSION=v0.12.15 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
   bash tests/smoke-live.sh
 ```
 
-GitHub Actions runs static/unit checks and pinned live smoke tests on macOS and
-Ubuntu. A scheduled job tests current upstream tags so upstream drift is found
-before users hit it. Release assets are built and tested in a read-only job;
-only a separate publishing job receives `contents: write`, and it never checks
-out or executes repository code. Publishing a SemVer GitHub Release uploads the
-executable and checksum assets consumed by `install.sh`; the release tag must
-match `speckit-bootstrap --version`.
+GitHub Actions runs the full static/unit and pinned live-smoke gate once, on the
+pull request SHA, on macOS and Ubuntu. `CI / required` is the stable ruleset
+context; merging unchanged code does not trigger the same CI again. A separate
+weekly/manual canary checks current Spec Kit, issue-canon, Codex, and Ponytail
+without blocking a known-good release.
+
+An annotated `v*` tag starts the release workflow. Its read-only job validates
+that the tag points into `main` and packages the exact script; it does not repeat
+functional CI. Only a separate publishing job receives `contents: write`, and
+it never checks out or executes repository code. The verified artifact is
+published atomically with the executable and checksum consumed by `install.sh`.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the release checklist and
 [SECURITY.md](SECURITY.md) for private vulnerability reporting.

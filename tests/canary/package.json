@@ -1,0 +1,7 @@
+{
+  "name": "speckit-bootstrap-canary",
+  "private": true,
+  "devDependencies": {
+    "@openai/codex": "0.144.4"
+  }
+}

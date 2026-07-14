@@ -6,6 +6,53 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.7.0] - 2026-07-14
+
+### Added
+
+- Added a fast local quality gate (`tests/ci-local.sh`) that runs syntax,
+  ShellCheck, unit, actionlint, and zizmor checks before push.
+- Added a separate weekly/manual upstream canary with independent core and real
+  Ponytail lanes, including the current Codex CLI.
+- Recorded the catalog-declared `github-issue-canon` archive SHA-256 in new
+  reproducibility locks.
+
+### Changed
+
+- Run full CI only for pull requests and manual dispatches; the stable
+  `CI / required` context is reused for merge protection, so an unchanged merge
+  SHA is not tested a second time.
+- Updated the pinned baseline to Spec Kit v0.12.15, issue-canon v0.3.1, and uv
+  0.11.28, with safe uv caches enabled in CI.
+- Use Spec Kit's catalog installation path so v0.12.15 verifies the extension
+  archive against the catalog's SHA-256 before installation.
+- Refresh existing workflows with `specify workflow update` and fall back to
+  installation only when no updatable workflow exists.
+- Publish from annotated `v*` tags: the read-only job packages once and the
+  checkout-free write job publishes that exact artifact.
+
+### Fixed
+
+- Removed the obsolete `--branch-numbering sequential` retry, which repeated a
+  failed initialization even though current Spec Kit treats the option as a
+  deprecated no-op.
+- Remove Spec Kit's completed workflow-install lock during cache cleanup so a
+  catalog migration does not leave an otherwise unchanged project dirty.
+- Fail closed when a workflow update command errors instead of treating every
+  failure as a legacy bundled-workflow migration signal.
+- Confirm catalog workflow updates noninteractively so the new v0.12.15 update
+  command cannot block an unattended bootstrap when an update is available.
+- Let the Ponytail canary exercise the real plugin path instead of inheriting a
+  smoke-test flag that always skipped it.
+
+### Security
+
+- Release publication now validates annotated tags and `main` ancestry before
+  granting the isolated publish job `contents: write`.
+- Upstream workflow syntax and permissions remain guarded by pinned actionlint
+  and zizmor checks, while repository rulesets require only the stable aggregate
+  context.
+
 ## [0.6.1] - 2026-07-13
 
 ### Fixed
