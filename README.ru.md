@@ -1,0 +1,396 @@
+<h1 align="center">speckit-bootstrap</h1>
+
+<p align="center">
+  <strong>Воспроизводимая Spec-Driven Development для Codex — одной командой.</strong>
+</p>
+
+<p align="center">
+  Превратите любой Git-репозиторий в проверенное рабочее окружение
+  GitHub Spec Kit + Codex с закреплёнными зависимостями, переиспользуемыми
+  навыками, автоматизацией GitHub Issues и воспроизводимым lock-файлом.
+</p>
+
+<p align="center">
+  <strong>Язык:</strong>
+  <a href="README.md">English</a> · <a href="README.ru.md">Русский</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/yshishenya/speckit-bootstrap/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yshishenya/speckit-bootstrap/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/yshishenya/speckit-bootstrap/releases/latest"><img alt="Последний релиз" src="https://img.shields.io/github/v/release/yshishenya/speckit-bootstrap?display_name=tag&sort=semver"></a>
+  <a href="LICENSE"><img alt="Лицензия MIT" src="https://img.shields.io/badge/license-MIT-blue.svg"></a>
+  <img alt="Проверено на macOS и Ubuntu" src="https://img.shields.io/badge/tested-macOS%20%2B%20Ubuntu-2ea44f">
+  <img alt="Bash 3.2 и новее" src="https://img.shields.io/badge/Bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white">
+</p>
+
+> [!NOTE]
+> `speckit-bootstrap` — независимый проект сообщества. Он использует
+> официальный [GitHub Spec Kit](https://github.com/github/spec-kit), но не
+> является продуктом GitHub и не аффилирован с GitHub.
+
+## Зачем нужен speckit-bootstrap?
+
+Spec-Driven Development помогает управлять разработкой. Но вручную согласовать
+CLI, workflow, расширения, навыки агента, правила проекта и GitHub-трекер сложно.
+
+`speckit-bootstrap` превращает этот подвижный набор инструментов в одну
+идемпотентную команду:
+
+```sh
+speckit-bootstrap .
+```
+
+| Без bootstrap | Со `speckit-bootstrap` |
+| --- | --- |
+| Каждый компонент устанавливается и связывается вручную | Одна команда устанавливает или обновляет весь набор |
+| «Последняя версия» незаметно меняется | Каждый тег, commit, источник и digest записывается в lock |
+| Drift обнаруживается во время реализации | `--doctor` находит расхождения до начала работы |
+| Обновление оставляет шумный или частичный результат | Изменения подготавливаются, проверяются и применяются атомарно |
+| Правила агентов и GitHub различаются между проектами | Навыки Codex и issue canon устанавливаются одинаково |
+| Для отката приходится восстанавливать окружение вручную | `--frozen` повторяет и проверяет зафиксированный набор |
+
+## Быстрый старт
+
+Нужны macOS или Ubuntu с `git`, `curl`, `python3` и
+[`uv`](https://docs.astral.sh/uv/). Также необходим `codex` CLI, если bootstrap
+не запускается с `--skip-ponytail`.
+
+### 1. Установите или обновите
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
+```
+
+Установщик определяет последний GitHub Release, скачивает исполняемый файл и
+его SHA-256, проверяет checksum и синтаксис shell, а затем атомарно устанавливает
+команду в:
+
+```text
+~/.local/bin/speckit-bootstrap
+```
+
+Убедитесь, что `~/.local/bin` находится в `PATH`, и проверьте установку:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+speckit-bootstrap --version
+```
+
+Повторный запуск установщика обновляет bootstrap. Для конкретной версии:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.7.0 bash
+```
+
+> [!TIP]
+> Хотите сначала проверить скрипт? Скачайте [`install.sh`](install.sh),
+> прочитайте его локально и запустите через `bash`.
+
+### 2. Подготовьте проект
+
+Для нового репозитория:
+
+```sh
+mkdir my-project
+cd my-project
+git init
+speckit-bootstrap .
+```
+
+Для существующего репозитория:
+
+```sh
+cd /path/to/project
+speckit-bootstrap .
+```
+
+Первый успешный запуск создаёт или обновляет:
+
+```text
+.specify/
+.specify/speckit-bootstrap.lock.json
+AGENTS.md
+docs/agent-guidance/
+.github/ISSUE_TEMPLATE/
+.github/pull_request_template.md
+~/.agents/skills/speckit-*
+```
+
+Перед commit проверьте diff созданной конфигурации проекта.
+
+### 3. Проверьте результат
+
+```sh
+speckit-bootstrap . --doctor
+```
+
+`--doctor` ничего не изменяет. Он проверяет источник CLI, зафиксированный
+workflow, payload расширений, состояние Ponytail, инструкции проекта и digest
+каждого управляемого глобального навыка. Исправная установка сообщает
+`speckit-bootstrap: doctor OK`.
+
+## Что вы получаете
+
+- **Официальный Spec Kit с pin.** Последний официальный тег `v*` разрешается в
+  неизменяемый commit SHA до установки.
+- **Workflow для Codex.** Сгенерированные навыки `speckit-*` синхронизируются в
+  `~/.agents/skills`, а локальные дубликаты по умолчанию удаляются.
+- **Воспроизводимые обновления.** Lock хранит версии, commit refs, URL
+  источников, hashes workflow, деревья расширений и digests навыков.
+- **Безопасный GitHub-трекинг.** Встроенный
+  [`github-issue-canon`](https://github.com/yshishenya/spec-kit-ext-github-issue-canon)
+  добавляет формы задач, шаблон pull request, validation hooks и правила
+  closeout.
+- **Интеграцию Ponytail.** Codex управляет жизненным циклом плагина
+  [`Ponytail`](https://github.com/DietrichGebert/ponytail), а bootstrap закрепляет
+  его источник и поддерживает инструкции проекта в актуальном виде.
+- **Сохранность пользовательского состояния.** Существующие каталоги,
+  сторонние навыки, инструкции и GitHub-шаблоны сохраняются.
+- **Fail-closed проверки.** Drift версий и checksum, пропавшие управляемые файлы
+  и изменённые исполняемые инструкции агента останавливают процесс.
+- **Чистый Git diff.** Служебные install-метаданные скрываются из обычного diff,
+  а изменения поведения проекта остаются видимыми.
+
+## Как это работает
+
+```mermaid
+flowchart LR
+    A["speckit-bootstrap ."] --> B["Официальный GitHub Spec Kit<br/>тег разрешён в commit SHA"]
+    A --> C["Навыки Codex<br/>~/.agents/skills"]
+    A --> D["GitHub issue canon<br/>шаблоны + hooks"]
+    A --> E["Плагин Ponytail<br/>pin источника + инструкции"]
+    B --> F["Воспроизводимый lock"]
+    C --> F
+    D --> F
+    E --> F
+    F --> G["Проверка после установки"]
+```
+
+Bootstrap никогда не изменяет upstream-репозитории. Он добавляет явные и
+проверяемые управляемые секции в файлы проекта, подготавливает глобальные
+навыки до замены и восстанавливает предыдущее состояние при ошибке.
+
+### Сначала актуальное, затем зафиксированное
+
+Обычный запуск намеренно начинает с актуальных стабильных релизов:
+
+1. Определяет последние разрешённые release tags.
+2. Разрешает каждый тег в неизменяемый commit.
+3. Устанавливает и проверяет workflow, расширения, плагин и навыки.
+4. Записывает точные источники и digests в
+   `.specify/speckit-bootstrap.lock.json`.
+5. Проверяет готовую установку перед успешным завершением.
+
+После этого зафиксированный контракт можно повторить без поиска новых версий:
+
+```sh
+speckit-bootstrap . --frozen
+```
+
+Frozen-режим сохраняет lock неизменным и завершает работу с ошибкой, если
+зафиксированные исполняемые данные отличаются.
+
+## Ежедневный процесс
+
+Используйте короткий цикл перед началом работы или обновлением интеграций:
+
+```sh
+# Посмотреть версии и план изменений.
+speckit-bootstrap . --dry-run --json
+
+# Применить обновление.
+speckit-bootstrap .
+
+# Проверить результат без записи.
+speckit-bootstrap . --doctor
+```
+
+Затем запускайте обычные навыки Spec Kit в Codex:
+
+```text
+$speckit-specify
+$speckit-clarify
+$speckit-plan
+$speckit-checklist
+$speckit-tasks
+$speckit-analyze
+$speckit-taskstoissues
+$speckit-implement
+```
+
+`$speckit-clarify`, `$speckit-checklist` и `$speckit-analyze` — проверки
+качества, которые выбираются по уровню риска. Используйте
+`$speckit-taskstoissues` для отслеживаемой feature-работы с GitHub remote; для
+read-only, документационных и совсем небольших прямых изменений он не нужен.
+
+При синхронизации задач установленное расширение автоматически:
+
+- проверяет наличие issue canon и labels до синхронизации;
+- валидирует открытые Spec Kit issues после синхронизации;
+- сохраняет `tasks.md` источником истины для реализации;
+- связывает реализацию, pull request, проверки и closeout evidence.
+
+> [!IMPORTANT]
+> Установленные правила GitHub Issues и pull requests по умолчанию используют
+> русский язык. Это осознанное соглашение проекта, записанное в инструкциях
+> агента.
+
+## Принятые соглашения
+
+Это намеренно больше, чем установщик пакетов. Bootstrap добавляет проверяемую
+политику разработки, которая согласует агентов, артефакты репозитория и внешний
+трекинг:
+
+- Git auto-commit включён после завершённых документационных этапов:
+  `constitution`, `specify`, `clarify`, `plan`, `checklist`, `tasks` и
+  `analyze`.
+- Все hooks `before_*`, а также `after_implement` и `after_taskstoissues`
+  отключены. Изменения кода и внешнего трекера остаются явными.
+- `tasks.md` — источник истины для реализации. GitHub Issues используются для
+  исполнения, review и closeout.
+- Заголовки отслеживаемых issues имеют формат
+  `[<feature>][<priority>][<area>] T###: <результат на русском>`.
+- Сгенерированные шаблоны plan и tasks требуют выбрать уровень риска и набор
+  проверок до реализации.
+- Продуктовые приложения и развёрнутые сервисы используют CalVer, а
+  переиспользуемые инструменты и библиотеки — SemVer.
+- Ponytail управляет формой реализации, но не ослабляет выбранные проверки.
+  После установки или обновления проверьте hooks командой `/hooks`.
+
+Управляемые секции политики остаются видимыми в diff проекта. Пользовательское
+содержимое за пределами этих секций сохраняется.
+
+## Справочник CLI
+
+```text
+speckit-bootstrap [PROJECT_DIR] [OPTIONS]
+```
+
+| Опция | Результат |
+| --- | --- |
+| `--doctor` | Проверить состояние проекта и пользователя без изменений |
+| `--dry-run` | Определить входные версии и показать только план изменений |
+| `--version` | Показать версию bootstrap и завершить работу |
+| `--frozen` | Использовать и проверить версии из lock-файла проекта |
+| `--json` | Оставить в stdout только один машиночитаемый результат |
+| `--keep-local-skills` | Сохранить локальные дубликаты сгенерированных навыков |
+| `--skip-cli-update` | Использовать уже установленный `specify` CLI |
+| `--skip-ponytail` | Не обновлять плагин Ponytail и его инструкции |
+| `-h`, `--help` | Показать полную справку команды |
+
+Полезные рецепты:
+
+```sh
+# Быстрое обновление без переустановки specify-cli.
+speckit-bootstrap . --skip-cli-update
+
+# Закрепить или откатить Spec Kit и записать новый lock.
+SPEC_KIT_VERSION=vX.Y.Z speckit-bootstrap .
+
+# Попробовать текущую ветку main официального Spec Kit.
+SPEC_KIT_VERSION=main speckit-bootstrap .
+
+# Показать служебные install-метаданные для аудита или релиза.
+SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
+
+# Запустить без Codex/Ponytail в headless-окружении.
+speckit-bootstrap . --skip-ponytail
+```
+
+### Переменные окружения
+
+| Переменная | Назначение |
+| --- | --- |
+| `SPEC_KIT_VERSION` | Тег или ref Spec Kit; по умолчанию последний тег `v*` |
+| `SPECKIT_EXTENSION_CATALOG_URL` | Переопределить разрешённый каталог расширений |
+| `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Закрепить release tag issue-canon |
+| `SPECKIT_GITHUB_ISSUE_CANON_URL` | Использовать проверенный пользовательский ZIP |
+| `SPECKIT_PONYTAIL_VERSION` | Закрепить release tag Ponytail |
+| `SPECKIT_PONYTAIL=0` | Отключить операции с плагином и инструкциями Ponytail |
+| `SPECKIT_TRACK_INSTALL_METADATA=1` | Показать служебные метаданные в Git diff |
+| `SPECKIT_BOOTSTRAP_INSTALL_DIR` | Путь установки; по умолчанию `~/.local/bin` |
+| `SPECKIT_BOOTSTRAP_VERSION` | Release tag bootstrap; по умолчанию `latest` |
+| `SPECKIT_BOOTSTRAP_URL` | Использовать собственный источник executable |
+| `SPECKIT_BOOTSTRAP_SHA256` | Обязательный checksum для собственного источника |
+| `SPECKIT_BOOTSTRAP_ALLOW_UNVERIFIED=1` | Аварийное разрешение проверенного источника без checksum |
+
+Запустите `speckit-bootstrap --help`, чтобы увидеть актуальный интерфейс.
+
+## Требования и совместимость
+
+Необходимы:
+
+- `git`
+- `curl`
+- `python3`
+- [`uv`](https://docs.astral.sh/uv/)
+
+Когда Ponytail включён, требуется `codex` CLI. В headless-окружении используйте
+`--skip-ponytail`.
+
+Поддерживаемая матрица:
+
+- macOS с системным Bash 3.2;
+- Ubuntu с Bash 5.
+
+Другие Unix-подобные окружения могут работать, но пока не входят в CI gate.
+
+## Проверки и модель доверия
+
+Проект рассматривает сгенерированные инструкции агента как исполняемые элементы
+supply chain, а не как безобидную документацию.
+
+- При установке executable сверяется с опубликованным SHA-256.
+- Внешние release tags разрешаются в неизменяемые commits.
+- Release asset issue-canon сверяется с checksum каталога.
+- Управляемый marketplace Ponytail закрепляет источник плагина на commit.
+- Lock schema v2 хранит полные деревья расширений и управляемых навыков.
+- GitHub Actions закреплены полными commit SHA и проверяются `zizmor`.
+- CI проверяет Bash syntax, ShellCheck, изолированные unit tests, безопасность
+  workflow и живой bootstrap на macOS и Ubuntu.
+
+Порядок приватного сообщения об уязвимостях и полные trust boundaries описаны в
+[SECURITY.md](SECURITY.md).
+
+## Разработка
+
+Запустите быстрый локальный gate:
+
+```sh
+bash tests/ci-local.sh
+```
+
+Запустите закреплённый end-to-end smoke test:
+
+```sh
+SPEC_KIT_VERSION=v0.12.15 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
+  bash tests/smoke-live.sh
+```
+
+GitHub выполняет полный функциональный gate один раз для каждого pull request
+на macOS и Ubuntu. Merge неизменённого кода не повторяет тот же CI. Релиз по
+тегу упаковывает точно проверенный commit без повторного функционального CI, а
+отдельный еженедельный canary находит новые несовместимости upstream.
+
+Перед pull request прочитайте [CONTRIBUTING.md](CONTRIBUTING.md). История релизов
+находится в [CHANGELOG.md](CHANGELOG.md).
+
+## Помогите проекту расти
+
+Если `speckit-bootstrap` экономит вам время:
+
+- [поставьте звезду](https://github.com/yshishenya/speckit-bootstrap),
+  чтобы проект нашли другие пользователи Spec Kit и Codex;
+- поделитесь быстрым стартом с командами, внедряющими Spec-Driven Development;
+- [создайте issue](https://github.com/yshishenya/speckit-bootstrap/issues/new)
+  с воспроизводимым дефектом или конкретным улучшением процесса;
+- предложите небольшой pull request с доказательствами проверки.
+
+Самый ценный вклад — история реального проекта: что вы подготовили, какая
+ручная работа исчезла и где workflow всё ещё мешал.
+
+## Лицензия
+
+Проект распространяется по [лицензии MIT](LICENSE).
