@@ -11,6 +11,22 @@ export HOME="$SANDBOX/home"
 PROJECT="$SANDBOX/project"
 mkdir -p "$HOME" "$PROJECT"
 
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  mkdir -p "$HOME/.specify"
+  umask 077
+  printf '%s\n' \
+    '{' \
+    '  "providers": [' \
+    '    {' \
+    '      "hosts": ["github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"],' \
+    '      "provider": "github",' \
+    '      "auth": "bearer",' \
+    '      "token_env": "GITHUB_TOKEN"' \
+    '    }' \
+    '  ]' \
+    '}' > "$HOME/.specify/auth.json"
+fi
+
 cleanup() {
   rm -rf "$SANDBOX"
 }

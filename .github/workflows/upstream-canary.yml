@@ -35,6 +35,7 @@ jobs:
 
       - name: Run against current upstream releases
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SPEC_KIT_VERSION: latest
           SPECKIT_GITHUB_ISSUE_CANON_VERSION: latest
           SPECKIT_PONYTAIL: 0
@@ -67,6 +68,7 @@ jobs:
 
       - name: Run real Ponytail integration smoke
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SPEC_KIT_VERSION: latest
           SPECKIT_GITHUB_ISSUE_CANON_VERSION: latest
           SPECKIT_PONYTAIL_VERSION: latest

@@ -482,6 +482,10 @@ assert "name: CI / required" in ci
 assert "schedule:" in canary
 assert "Current Codex and latest Ponytail" in canary
 assert "npm ci --ignore-scripts --prefix tests/canary" in canary
+assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
+assert "GITHUB_TOKEN: ${{ github.token }}" in ci
+assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
+assert '\"token\":' not in smoke
 assert "--skip-ponytail" not in smoke
 assert "--branch-numbering" not in bootstrap
 PY

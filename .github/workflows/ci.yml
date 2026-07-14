@@ -74,6 +74,7 @@ jobs:
 
       - name: Run live bootstrap smoke test
         env:
+          GITHUB_TOKEN: ${{ github.token }}
           SPEC_KIT_VERSION: v0.12.15
           SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.3.1
         run: bash tests/smoke-live.sh

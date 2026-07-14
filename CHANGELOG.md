@@ -44,6 +44,9 @@ All notable changes to this project are documented in this file.
   command cannot block an unattended bootstrap when an update is available.
 - Let the Ponytail canary exercise the real plugin path instead of inheriting a
   smoke-test flag that always skipped it.
+- Authenticate Spec Kit release downloads in CI through a temporary
+  environment-backed auth config, avoiding shared-runner API rate-limit flakes
+  without persisting the token.
 
 ### Security
 
