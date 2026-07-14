@@ -81,12 +81,12 @@ test_catalog_install_checks_expected_version_and_skill() (
   printf 'skill\n' > "$PROJECT_DIR/$skill"
 
   # Invoked indirectly by ensure_extension_from_catalog.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   specify() {
     [[ "$SPECKIT_CATALOG_URL" == "$RESOLVED_ISSUE_CANON_CATALOG_URL" ]] || return 1
     [[ "$*" == "extension add github-issue-canon --force" ]]
   }
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   extension_version() {
     printf '0.3.0\n'
   }
@@ -493,7 +493,7 @@ test_workflow_update_failure_does_not_fall_back_to_install() (
   mkdir -p "$sandbox"
 
   # Invoked indirectly by refresh_speckit_workflow.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   specify() {
     printf '%s\n' "$*" >> "$calls"
     echo 'simulated workflow update failure'
@@ -512,7 +512,7 @@ test_workflow_update_confirms_noninteractively() (
   mkdir -p "$sandbox"
 
   # Invoked indirectly by refresh_speckit_workflow.
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   specify() {
     [[ "$*" == "workflow update speckit" ]] || return 1
     IFS= read -r response
