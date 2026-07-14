@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.6.1"
+BOOTSTRAP_VERSION="0.7.0"
 
 usage() {
   cat <<'EOF'
@@ -61,6 +61,8 @@ RESOLVED_ISSUE_CANON_VERSION=""
 RESOLVED_ISSUE_CANON_REF=""
 RESOLVED_ISSUE_CANON_INSTALLED_VERSION=""
 RESOLVED_ISSUE_CANON_URL=""
+RESOLVED_ISSUE_CANON_CATALOG_URL=""
+RESOLVED_ISSUE_CANON_ARCHIVE_SHA256=""
 RESOLVED_ISSUE_CANON_MANIFEST_HASH=""
 RESOLVED_PONYTAIL_VERSION=""
 RESOLVED_PONYTAIL_REF=""
@@ -78,6 +80,7 @@ RESOLVED_GLOBAL_SKILLS_MANIFEST="{}"
 PONYTAIL_PLUGIN_STATUS="skipped"
 GLOBAL_LOCK_DIR=""
 JSON_OUTPUT_FD=1
+ISSUE_CANON_INSTALL_FROM_CATALOG=0
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
 GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-}"
 PONYTAIL_UPSTREAM_AGENTS_PATH="docs/agent-guidance/ponytail-upstream.md"
@@ -221,6 +224,45 @@ normalize_tag() {
     v*) printf '%s\n' "$1" ;;
     *) printf 'v%s\n' "$1" ;;
   esac
+}
+
+resolve_issue_canon_catalog_entry() {
+  python3 - "$YAN_EXTENSION_CATALOG_URL" <<'PY'
+import json
+import re
+import sys
+import urllib.error
+import urllib.request
+from urllib.parse import urlparse
+
+catalog_url = sys.argv[1]
+try:
+    with urllib.request.urlopen(catalog_url, timeout=30) as response:
+        catalog = json.load(response)
+    entry = catalog["extensions"]["github-issue-canon"]
+    version = str(entry["version"])
+    if version.startswith("v"):
+        version = version[1:]
+    download_url = str(entry["download_url"])
+    sha256 = str(entry["sha256"]).lower()
+except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError) as error:
+    print(
+        f"speckit-bootstrap: invalid github-issue-canon catalog entry at "
+        f"{catalog_url}: {error}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+if not re.fullmatch(r"[0-9A-Za-z][0-9A-Za-z._+-]*", version):
+    raise SystemExit("speckit-bootstrap: catalog contains an unsafe github-issue-canon version")
+parsed = urlparse(download_url)
+if parsed.scheme != "https" or not parsed.hostname:
+    raise SystemExit("speckit-bootstrap: catalog github-issue-canon download_url must use HTTPS")
+if not re.fullmatch(r"[0-9a-f]{64}", sha256):
+    raise SystemExit("speckit-bootstrap: catalog github-issue-canon sha256 is missing or invalid")
+
+print(f"v{version}\t{download_url}\t{sha256}")
+PY
 }
 
 require_remote_tag() {
@@ -370,23 +412,47 @@ prepare_versions() {
     RESOLVED_ISSUE_CANON_URL="$GITHUB_ISSUE_CANON_EXTENSION_URL"
   else
     local requested_canon="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
-    if [[ "$requested_canon" == "latest" ]]; then
-      RESOLVED_ISSUE_CANON_VERSION="$(resolve_latest_tag https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git)"
+    local catalog_entry
+    local catalog_version
+    local catalog_url
+    local catalog_sha256
+    catalog_entry="$(resolve_issue_canon_catalog_entry)"
+    IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
+
+    if [[ "$requested_canon" == "latest" || "$(normalize_tag "$requested_canon")" == "$catalog_version" ]]; then
+      RESOLVED_ISSUE_CANON_VERSION="$catalog_version"
+      RESOLVED_ISSUE_CANON_URL="$catalog_url"
+      RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
+      ISSUE_CANON_INSTALL_FROM_CATALOG=1
     else
       RESOLVED_ISSUE_CANON_VERSION="$(normalize_tag "$requested_canon")"
-      require_remote_tag \
-        https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
-        "$RESOLVED_ISSUE_CANON_VERSION"
     fi
     if [[ -z "$RESOLVED_ISSUE_CANON_VERSION" ]]; then
       echo "speckit-bootstrap: could not resolve github-issue-canon version" >&2
       return 1
     fi
     require_safe_version_tag "$RESOLVED_ISSUE_CANON_VERSION" github-issue-canon
+    require_remote_tag \
+      https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
+      "$RESOLVED_ISSUE_CANON_VERSION"
     RESOLVED_ISSUE_CANON_REF="$(resolve_tag_commit \
       https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
       "$RESOLVED_ISSUE_CANON_VERSION")"
-    RESOLVED_ISSUE_CANON_URL="https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/$RESOLVED_ISSUE_CANON_REF.zip"
+    RESOLVED_ISSUE_CANON_CATALOG_URL="$YAN_EXTENSION_CATALOG_URL"
+    if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 && -z "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
+      local pinned_catalog_url
+      local pinned_catalog_entry
+      pinned_catalog_url="https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/$RESOLVED_ISSUE_CANON_REF/catalog.json"
+      pinned_catalog_entry="$(YAN_EXTENSION_CATALOG_URL="$pinned_catalog_url" resolve_issue_canon_catalog_entry)"
+      if [[ "$pinned_catalog_entry" != "$catalog_entry" ]]; then
+        echo "speckit-bootstrap: tagged github-issue-canon catalog differs from the resolved main catalog" >&2
+        return 1
+      fi
+      RESOLVED_ISSUE_CANON_CATALOG_URL="$pinned_catalog_url"
+    fi
+    if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 0 ]]; then
+      RESOLVED_ISSUE_CANON_URL="https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/$RESOLVED_ISSUE_CANON_REF.zip"
+    fi
   fi
 
   if [[ "$SKIP_PONYTAIL" -eq 0 ]]; then
@@ -1231,6 +1297,31 @@ ensure_extension() {
   return 1
 }
 
+ensure_extension_from_catalog() {
+  local name="$1"
+  local expected_version="${2#v}"
+  local expected_skill="${3:-}"
+  local output
+  local installed_version
+  local catalog_url="${RESOLVED_ISSUE_CANON_CATALOG_URL:-$YAN_EXTENSION_CATALOG_URL}"
+
+  if ! output="$(SPECKIT_CATALOG_URL="$catalog_url" specify extension add "$name" --force 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+  printf '%s\n' "$output"
+
+  installed_version="$(extension_version "$name")"
+  if [[ "$installed_version" != "$expected_version" ]]; then
+    echo "speckit-bootstrap: catalog installed $name $installed_version, expected $expected_version" >&2
+    return 1
+  fi
+  if [[ -n "$expected_skill" && ! -f "$PROJECT_DIR/$expected_skill" ]]; then
+    echo "speckit-bootstrap: catalog install did not register $expected_skill" >&2
+    return 1
+  fi
+}
+
 ensure_extension_from_url() {
   local name="$1"
   local url="$2"
@@ -1788,6 +1879,7 @@ clean_caches() {
     "$PROJECT_DIR/.specify/extensions/.cache" \
     "$PROJECT_DIR/.specify/integrations/.cache" \
     "$PROJECT_DIR/.specify/workflows/.cache"
+  rm -f "$PROJECT_DIR/.specify/.workflow-install.lock"
 }
 
 hide_install_metadata_diffs() {
@@ -1850,13 +1942,21 @@ init_spec_kit_project() {
     args+=(--ignore-agent-tools)
   fi
 
-  if SPECIFY_INIT_DIR="$PROJECT_DIR" specify "${args[@]}"; then
-    return
-  fi
-
-  echo "speckit-bootstrap: retrying Spec Kit init with legacy branch numbering option"
-  args+=(--branch-numbering sequential)
   SPECIFY_INIT_DIR="$PROJECT_DIR" specify "${args[@]}"
+}
+
+refresh_speckit_workflow() {
+  local output
+  if ! output="$(printf 'y\n' | specify workflow update speckit 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    return 1
+  fi
+  printf '%s\n' "$output"
+
+  if printf '%s\n' "$output" | grep -Fq "No workflows were eligible for update"; then
+    echo "speckit-bootstrap: workflow is not catalog-managed; reinstalling it from the catalog"
+    specify workflow add speckit
+  fi
 }
 
 write_lock_file() {
@@ -1887,6 +1987,7 @@ write_lock_file() {
     "$RESOLVED_ISSUE_CANON_REF" \
     "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" \
     "$RESOLVED_ISSUE_CANON_URL" \
+    "$RESOLVED_ISSUE_CANON_ARCHIVE_SHA256" \
     "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" \
     "$RESOLVED_ISSUE_CANON_TREE_SHA256" \
     "$RESOLVED_AGENT_CONTEXT_VERSION" \
@@ -1922,33 +2023,34 @@ data = {
         "ref": sys.argv[6],
         "installed_version": sys.argv[7],
         "source_url": sys.argv[8],
-        "manifest_hash": sys.argv[9],
-        "tree_sha256": sys.argv[10],
+        "archive_sha256": sys.argv[9],
+        "manifest_hash": sys.argv[10],
+        "tree_sha256": sys.argv[11],
     },
     "extensions": {
         "agent_context": {
-            "version": sys.argv[11],
-            "manifest_hash": sys.argv[12],
-            "tree_sha256": sys.argv[13],
+            "version": sys.argv[12],
+            "manifest_hash": sys.argv[13],
+            "tree_sha256": sys.argv[14],
         },
         "git": {
-            "version": sys.argv[14],
-            "manifest_hash": sys.argv[15],
-            "tree_sha256": sys.argv[16],
+            "version": sys.argv[15],
+            "manifest_hash": sys.argv[16],
+            "tree_sha256": sys.argv[17],
         },
     },
     "workflow": {
         "id": "speckit",
-        "version": sys.argv[17],
-        "sha256": sys.argv[18],
+        "version": sys.argv[18],
+        "sha256": sys.argv[19],
     },
     "ponytail": {
-        "enabled": sys.argv[19] == "true",
-        "version": sys.argv[20],
-        "ref": sys.argv[21],
-        "marketplace_sha256": sys.argv[22],
+        "enabled": sys.argv[20] == "true",
+        "version": sys.argv[21],
+        "ref": sys.argv[22],
+        "marketplace_sha256": sys.argv[23],
     },
-    "global_skills": json.loads(sys.argv[23]),
+    "global_skills": json.loads(sys.argv[24]),
 }
 content = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -1981,6 +2083,7 @@ print_plan() {
       "$RESOLVED_ISSUE_CANON_VERSION" \
       "$RESOLVED_ISSUE_CANON_REF" \
       "$RESOLVED_ISSUE_CANON_URL" \
+      "$RESOLVED_ISSUE_CANON_ARCHIVE_SHA256" \
       "$ponytail" \
       "$RESOLVED_PONYTAIL_REF" \
       "$FROZEN" <<'PY' >&"$JSON_OUTPUT_FD"
@@ -1990,10 +2093,15 @@ import sys
 print(json.dumps({
     "status": "planned",
     "project": sys.argv[1],
-    "frozen": sys.argv[9] == "1",
+    "frozen": sys.argv[10] == "1",
     "spec_kit": {"version": sys.argv[2], "ref": sys.argv[3]},
-    "github_issue_canon": {"version": sys.argv[4], "ref": sys.argv[5], "source_url": sys.argv[6]},
-    "ponytail": {"version": sys.argv[7], "ref": sys.argv[8]},
+    "github_issue_canon": {
+        "version": sys.argv[4],
+        "ref": sys.argv[5],
+        "source_url": sys.argv[6],
+        "archive_sha256": sys.argv[7],
+    },
+    "ponytail": {"version": sys.argv[8], "ref": sys.argv[9]},
 }, ensure_ascii=False, sort_keys=True))
 PY
     return
@@ -2007,6 +2115,8 @@ PY
   echo "  github-issue-canon: $RESOLVED_ISSUE_CANON_VERSION"
   echo "  github-issue-canon ref: $RESOLVED_ISSUE_CANON_REF"
   echo "  github-issue-canon source: $RESOLVED_ISSUE_CANON_URL"
+  [[ -z "$RESOLVED_ISSUE_CANON_ARCHIVE_SHA256" ]] || \
+    echo "  github-issue-canon archive sha256: $RESOLVED_ISSUE_CANON_ARCHIVE_SHA256"
   echo "  Ponytail: $ponytail"
   [[ "$SKIP_PONYTAIL" -eq 1 ]] || echo "  Ponytail ref: $RESOLVED_PONYTAIL_REF"
   echo "  mutations: project .specify/AGENTS.md/.github, user catalogs/plugins/global skills"
@@ -2339,7 +2449,7 @@ main() {
     if [[ "$FROZEN" -eq 1 ]]; then
       echo "speckit-bootstrap: frozen mode preserved the locked workflow and extensions"
     else
-      specify workflow add speckit
+      refresh_speckit_workflow
     fi
   fi
 
@@ -2368,11 +2478,18 @@ main() {
     ensure_extension git ".agents/skills/speckit-git-feature/SKILL.md"
     specify extension update agent-context
     specify extension update git
-    ensure_extension_from_url \
-      github-issue-canon \
-      "$RESOLVED_ISSUE_CANON_URL" \
-      "$RESOLVED_ISSUE_CANON_VERSION" \
-      ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+    if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 ]]; then
+      ensure_extension_from_catalog \
+        github-issue-canon \
+        "$RESOLVED_ISSUE_CANON_VERSION" \
+        ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+    else
+      ensure_extension_from_url \
+        github-issue-canon \
+        "$RESOLVED_ISSUE_CANON_URL" \
+        "$RESOLVED_ISSUE_CANON_VERSION" \
+        ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+    fi
   fi
 
   ensure_agent_context_config

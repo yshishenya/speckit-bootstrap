@@ -3,13 +3,29 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.12.11}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.12.15}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
 export HOME="$SANDBOX/home"
 PROJECT="$SANDBOX/project"
 mkdir -p "$HOME" "$PROJECT"
+
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  mkdir -p "$HOME/.specify"
+  umask 077
+  printf '%s\n' \
+    '{' \
+    '  "providers": [' \
+    '    {' \
+    '      "hosts": ["github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"],' \
+    '      "provider": "github",' \
+    '      "auth": "bearer",' \
+    '      "token_env": "GITHUB_TOKEN"' \
+    '    }' \
+    '  ]' \
+    '}' > "$HOME/.specify/auth.json"
+fi
 
 cleanup() {
   rm -rf "$SANDBOX"
@@ -24,9 +40,9 @@ git -C "$PROJECT" add README.md
 git -C "$PROJECT" commit -qm 'Initialize smoke fixture'
 
 export SPEC_KIT_VERSION SPECKIT_GITHUB_ISSUE_CANON_VERSION
-export SPECKIT_PONYTAIL=0
+export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
 
-"$BOOTSTRAP" "$PROJECT" --skip-ponytail
+"$BOOTSTRAP" "$PROJECT"
 
 # The child bootstrap updates its own PATH. Export uv's bin directory here for
 # subsequent frozen invocations from this parent smoke-test shell.
@@ -81,8 +97,15 @@ git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
 LOCK="$PROJECT/.specify/speckit-bootstrap.lock.json"
+"$BOOTSTRAP" "$PROJECT" --skip-cli-update
+if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
+  echo 'smoke-live: a normal repeat bootstrap was not idempotent' >&2
+  git -C "$PROJECT" status --short >&2
+  exit 1
+fi
+
 LOCK_BEFORE="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
-"$BOOTSTRAP" "$PROJECT" --skip-cli-update --skip-ponytail --frozen
+"$BOOTSTRAP" "$PROJECT" --skip-cli-update --frozen
 LOCK_AFTER="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
 if [[ "$LOCK_BEFORE" != "$LOCK_AFTER" ]]; then
   echo 'smoke-live: frozen bootstrap rewrote the reproducibility lock' >&2
@@ -95,11 +118,11 @@ if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
 fi
 
 SPECKIT_TRACK_INSTALL_METADATA=1 \
-  "$BOOTSTRAP" "$PROJECT" --skip-cli-update --skip-ponytail --frozen
+  "$BOOTSTRAP" "$PROJECT" --skip-cli-update --frozen
 if git -C "$PROJECT" ls-files -v .specify | grep -q '^S '; then
   echo 'smoke-live: audit mode left Spec Kit metadata hidden' >&2
   exit 1
 fi
 
 SPECKIT_TRACK_INSTALL_METADATA=1 "$BOOTSTRAP" "$PROJECT" --doctor
-echo 'smoke-live: fresh install, integrity probes, JSON doctor, frozen rerun, and audit mode passed'
+echo 'smoke-live: fresh install, update path, integrity probes, JSON doctor, frozen rerun, and audit mode passed'

@@ -10,3 +10,13 @@ updates:
       github-actions:
         patterns:
           - '*'
+  - package-ecosystem: npm
+    directory: /tests/canary
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      codex-canary:
+        patterns:
+          - '*'

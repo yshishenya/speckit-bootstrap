@@ -34,8 +34,65 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.6.1" ]]
+  [[ "$output" == "speckit-bootstrap 0.7.0" ]]
 }
+
+test_issue_canon_catalog_entry_requires_checksum() (
+  local sandbox="$TEST_ROOT/catalog-entry"
+  local catalog="$sandbox/catalog.json"
+  mkdir -p "$sandbox"
+  cat > "$catalog" <<'EOF'
+{
+  "extensions": {
+    "github-issue-canon": {
+      "version": "0.3.0",
+      "download_url": "https://example.test/github-issue-canon-0.3.0.zip",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  }
+}
+EOF
+  local entry
+  entry="$(YAN_EXTENSION_CATALOG_URL="file://$catalog" resolve_issue_canon_catalog_entry)"
+  [[ "$entry" == $'v0.3.0\thttps://example.test/github-issue-canon-0.3.0.zip\t'"$(printf 'a%.0s' {1..64})" ]] || return 1
+
+  python3 - "$catalog" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text(encoding="utf-8"))
+data["extensions"]["github-issue-canon"]["sha256"] = "missing"
+path.write_text(json.dumps(data), encoding="utf-8")
+PY
+  if YAN_EXTENSION_CATALOG_URL="file://$catalog" \
+    resolve_issue_canon_catalog_entry >/dev/null 2>&1; then
+    return 1
+  fi
+)
+
+test_catalog_install_checks_expected_version_and_skill() (
+  local sandbox="$TEST_ROOT/catalog-install"
+  PROJECT_DIR="$sandbox/project"
+  RESOLVED_ISSUE_CANON_CATALOG_URL="https://example.test/pinned/catalog.json"
+  local skill=".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
+  mkdir -p "$PROJECT_DIR/$(dirname "$skill")"
+  printf 'skill\n' > "$PROJECT_DIR/$skill"
+
+  # Invoked indirectly by ensure_extension_from_catalog.
+  # shellcheck disable=SC2317,SC2329
+  specify() {
+    [[ "$SPECKIT_CATALOG_URL" == "$RESOLVED_ISSUE_CANON_CATALOG_URL" ]] || return 1
+    [[ "$*" == "extension add github-issue-canon --force" ]]
+  }
+  # shellcheck disable=SC2317,SC2329
+  extension_version() {
+    printf '0.3.0\n'
+  }
+
+  ensure_extension_from_catalog github-issue-canon v0.3.0 "$skill"
+)
 
 test_catalog_merge_is_additive_and_idempotent() (
   local sandbox="$TEST_ROOT/catalog"
@@ -208,7 +265,7 @@ sha = "a" * 40
 digest = "b" * 64
 data = {
     "schema_version": 2,
-    "bootstrap_version": "0.6.1",
+    "bootstrap_version": "0.7.0",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",
@@ -384,22 +441,114 @@ import sys
 from pathlib import Path
 
 text = Path(sys.argv[1]).read_text(encoding="utf-8")
-build = text.split("  build:\n", 1)[1].split("\n  publish:\n", 1)[0]
+package = text.split("  package:\n", 1)[1].split("\n  publish:\n", 1)[0]
 publish = text.split("\n  publish:\n", 1)[1]
-assert "contents: write" not in build
-assert "bash tests/unit.sh" in build
-assert "actions/upload-artifact@" in build
+assert "push:" in text and "tags:" in text
+assert "release:" not in text
+assert "contents: write" not in package
+assert "bash tests/unit.sh" not in text
+assert "actions/upload-artifact@" in package
+assert "git for-each-ref" in package
+assert "%(contents:subject)%0a%0a%(contents:body)" in package
+assert "--format='%(contents)'" not in package
 assert "contents: write" in publish
 assert "actions/download-artifact@" in publish
 assert "actions/checkout@" not in publish
-assert "bash tests/unit.sh" not in publish
 assert "bin/speckit-bootstrap" not in publish
 assert '--repo "$GITHUB_REPOSITORY"' in publish
+assert "--notes-file dist/release-notes.md" in publish
 PY
 }
 
-printf '1..12\n'
+test_ci_topology_avoids_duplicate_sha_runs() {
+  python3 - \
+    "$REPO_ROOT/.github/workflows/ci.yml" \
+    "$REPO_ROOT/.github/workflows/upstream-canary.yml" \
+    "$BOOTSTRAP" \
+    "$REPO_ROOT/tests/smoke-live.sh" <<'PY'
+import sys
+from pathlib import Path
+
+ci = Path(sys.argv[1]).read_text(encoding="utf-8")
+canary = Path(sys.argv[2]).read_text(encoding="utf-8")
+bootstrap = Path(sys.argv[3]).read_text(encoding="utf-8")
+smoke = Path(sys.argv[4]).read_text(encoding="utf-8")
+trigger_block = ci.split("permissions:", 1)[0]
+assert "pull_request:" in trigger_block
+assert "workflow_dispatch:" in trigger_block
+assert "push:" not in trigger_block
+assert "schedule:" not in trigger_block
+assert "name: CI / required" in ci
+assert "schedule:" in canary
+assert "Current Codex and latest Ponytail" in canary
+assert "npm ci --ignore-scripts --prefix tests/canary" in canary
+assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
+assert "GITHUB_TOKEN: ${{ github.token }}" in ci
+assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
+assert '\"token\":' not in smoke
+assert "--skip-ponytail" not in smoke
+assert "--branch-numbering" not in bootstrap
+PY
+}
+
+test_workflow_update_failure_does_not_fall_back_to_install() (
+  local sandbox="$TEST_ROOT/workflow-update-failure"
+  local calls="$sandbox/calls"
+  mkdir -p "$sandbox"
+
+  # Invoked indirectly by refresh_speckit_workflow.
+  # shellcheck disable=SC2317,SC2329
+  specify() {
+    printf '%s\n' "$*" >> "$calls"
+    echo 'simulated workflow update failure'
+    return 1
+  }
+
+  if refresh_speckit_workflow 2>/dev/null; then
+    return 1
+  fi
+  [[ "$(cat "$calls")" == "workflow update speckit" ]]
+)
+
+test_workflow_update_confirms_noninteractively() (
+  local sandbox="$TEST_ROOT/workflow-update-confirm"
+  local answer="$sandbox/answer"
+  mkdir -p "$sandbox"
+
+  # Invoked indirectly by refresh_speckit_workflow.
+  # shellcheck disable=SC2317,SC2329
+  specify() {
+    [[ "$*" == "workflow update speckit" ]] || return 1
+    IFS= read -r response
+    printf '%s\n' "$response" > "$answer"
+    echo 'Workflow updated'
+  }
+
+  refresh_speckit_workflow >/dev/null
+  [[ "$(cat "$answer")" == "y" ]]
+)
+
+test_cache_cleanup_removes_completed_workflow_lock() (
+  local sandbox="$TEST_ROOT/cache-cleanup"
+  PROJECT_DIR="$sandbox/project"
+  mkdir -p \
+    "$PROJECT_DIR/.specify/extensions/.cache" \
+    "$PROJECT_DIR/.specify/integrations/.cache" \
+    "$PROJECT_DIR/.specify/workflows/.cache"
+  touch "$PROJECT_DIR/.specify/.workflow-install.lock"
+
+  clean_caches
+
+  [[ ! -e "$PROJECT_DIR/.specify/.workflow-install.lock" ]]
+  [[ ! -e "$PROJECT_DIR/.specify/extensions/.cache" ]]
+  [[ ! -e "$PROJECT_DIR/.specify/integrations/.cache" ]]
+  [[ ! -e "$PROJECT_DIR/.specify/workflows/.cache" ]]
+)
+
+printf '1..18\n'
 run_test 'version and sourceability' test_version_and_sourceability
+run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
+run_test 'catalog install verifies version and skill' test_catalog_install_checks_expected_version_and_skill
 run_test 'catalog merge is additive and idempotent' test_catalog_merge_is_additive_and_idempotent
 run_test 'global skill sync preserves user content and detects tampering' test_atomic_global_skill_sync_preserves_user_content
 run_test 'issue canon files preserve user templates' test_issue_canon_files_preserve_user_template
@@ -411,6 +560,10 @@ run_test 'signal handler releases the lock and exits' test_signal_handler_releas
 run_test 'Ponytail marketplace path is canonical' test_ponytail_marketplace_path_is_canonical
 run_test 'JSON mode keeps stdout machine-readable' test_json_mode_keeps_stdout_machine_readable
 run_test 'release publish job does not execute repository code' test_release_publish_job_does_not_execute_repository_code
+run_test 'CI topology avoids duplicate SHA runs' test_ci_topology_avoids_duplicate_sha_runs
+run_test 'workflow update failure does not fall back to install' test_workflow_update_failure_does_not_fall_back_to_install
+run_test 'workflow update confirms noninteractively' test_workflow_update_confirms_noninteractively
+run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
