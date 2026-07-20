@@ -34,8 +34,30 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.7.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.7.1" ]]
 }
+
+test_installer_reports_missing_path() (
+  local sandbox="$TEST_ROOT/installer-path"
+  local install_dir="$sandbox/bin"
+  local checksum output
+  mkdir -p "$sandbox/home"
+  checksum="$(sha256_for_test "$BOOTSTRAP")"
+
+  output="$(
+    HOME="$sandbox/home" \
+      PATH="/usr/bin:/bin" \
+      SPECKIT_BOOTSTRAP_INSTALL_DIR="$install_dir" \
+      SPECKIT_BOOTSTRAP_URL="file://$BOOTSTRAP" \
+      SPECKIT_BOOTSTRAP_SHA256="$checksum" \
+      bash "$REPO_ROOT/install.sh"
+  )"
+
+  [[ -x "$install_dir/speckit-bootstrap" ]] || return 1
+  grep -Fq \
+    "Add it to PATH for this shell: export PATH=\"$install_dir:\$PATH\"" \
+    <<< "$output"
+)
 
 test_issue_canon_catalog_entry_requires_checksum() (
   local sandbox="$TEST_ROOT/catalog-entry"
@@ -162,6 +184,26 @@ sha256_for_test() {
   fi
 }
 
+make_fake_specify_cli() {
+  local sandbox="$1"
+  local commit="$2"
+  local tool="$sandbox/home/.local/share/uv/tools/specify-cli"
+  local bin="$sandbox/bin"
+  local site="$tool/lib/python3.11/site-packages/specify_cli-9.9.9.dist-info"
+  mkdir -p "$tool/bin" "$site" "$bin"
+  ln -s /bin/bash "$tool/bin/python"
+  {
+    printf '#!%s\n' "$tool/bin/python"
+    # The literal positional parameter belongs to the generated fake launcher.
+    # shellcheck disable=SC2016
+    printf 'if [[ "${1:-}" == "--version" ]]; then echo "specify-cli 9.9.9"; exit 0; fi\n'
+    printf 'exit 0\n'
+  } > "$bin/specify"
+  chmod +x "$bin/specify"
+  printf '{"url":"https://github.com/github/spec-kit.git","vcs_info":{"commit_id":"%s"}}\n' \
+    "$commit" > "$site/direct_url.json"
+}
+
 test_atomic_global_skill_sync_preserves_user_content() (
   local sandbox="$TEST_ROOT/skills"
   # shellcheck disable=SC2030,SC2031
@@ -252,6 +294,24 @@ test_audit_mode_unhides_install_metadata() (
   fi
 )
 
+test_doctor_explains_hidden_metadata_drift() (
+  local sandbox="$TEST_ROOT/hidden-drift"
+  local output
+  PROJECT_DIR="$sandbox/project"
+  mkdir -p "$PROJECT_DIR/.specify/extensions"
+  git -C "$PROJECT_DIR" init -q
+  printf '{}\n' > "$PROJECT_DIR/.specify/extensions/.registry"
+  git -C "$PROJECT_DIR" add .specify/extensions/.registry
+  git -C "$PROJECT_DIR" update-index --skip-worktree .specify/extensions/.registry
+  printf '{"drift":true}\n' > "$PROJECT_DIR/.specify/extensions/.registry"
+
+  output="$(explain_hidden_install_metadata_drift 2>&1)"
+  grep -Fq '.specify/extensions/.registry' <<< "$output" || return 1
+  grep -Fq \
+    'SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap . --doctor' \
+    <<< "$output"
+)
+
 test_frozen_lock_is_immutable_when_ponytail_is_skipped() (
   local sandbox="$TEST_ROOT/frozen-lock"
   PROJECT_DIR="$sandbox/project"
@@ -265,7 +325,7 @@ sha = "a" * 40
 digest = "b" * 64
 data = {
     "schema_version": 2,
-    "bootstrap_version": "0.7.0",
+    "bootstrap_version": "0.7.1",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",
@@ -328,6 +388,50 @@ test_extension_tree_integrity_detects_payload_tampering() (
   fi
 )
 
+test_matching_cli_skips_force_reinstall() (
+  local sandbox="$TEST_ROOT/cli-fast-path"
+  local tool="$sandbox/home/.local/share/uv/tools/specify-cli"
+  local bin="$sandbox/bin"
+  local site="$tool/lib/python3.11/site-packages/specify_cli-9.9.9.dist-info"
+  local calls="$sandbox/uv-calls"
+  local expected_ref="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  local wrong_ref="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  local output
+  make_fake_specify_cli "$sandbox" "$expected_ref"
+
+  # Invoked indirectly by install_cli.
+  # shellcheck disable=SC2317,SC2329
+  uv() {
+    printf '%s\n' "$*" >> "$calls"
+    if [[ "$*" == "tool dir --bin" ]]; then
+      printf '%s\n' "$bin"
+    fi
+  }
+
+  # shellcheck disable=SC2030,SC2031
+  PATH="$bin:$PATH"
+  export PATH
+  # shellcheck disable=SC2030,SC2031
+  SKIP_CLI_UPDATE=0
+  # shellcheck disable=SC2030,SC2031
+  FROZEN=0
+  # shellcheck disable=SC2030,SC2031
+  RESOLVED_SPEC_KIT_VERSION="v9.9.9"
+  # shellcheck disable=SC2030,SC2031
+  RESOLVED_SPEC_KIT_REF="$expected_ref"
+
+  output="$(install_cli)"
+  [[ "$output" == *"already matches"* ]] || return 1
+  [[ ! -e "$calls" ]] || return 1
+
+  printf '{"url":"https://github.com/github/spec-kit.git","vcs_info":{"commit_id":"%s"}}\n' \
+    "$wrong_ref" > "$site/direct_url.json"
+  install_cli >/dev/null
+  grep -Fq \
+    "tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@$expected_ref" \
+    "$calls"
+)
+
 test_frozen_skip_cli_update_requires_locked_commit() (
   local sandbox="$TEST_ROOT/cli-ref"
   local tool="$sandbox/home/.local/share/uv/tools/specify-cli"
@@ -335,26 +439,18 @@ test_frozen_skip_cli_update_requires_locked_commit() (
   local site="$tool/lib/python3.11/site-packages/specify_cli-9.9.9.dist-info"
   local expected_ref="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   local wrong_ref="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  mkdir -p "$tool/bin" "$site" "$bin"
-  ln -s /bin/bash "$tool/bin/python"
-  {
-    printf '#!%s\n' "$tool/bin/python"
-    # The literal positional parameter belongs to the generated fake launcher.
-    # shellcheck disable=SC2016
-    printf 'if [[ "${1:-}" == "--version" ]]; then echo "specify-cli 9.9.9"; exit 0; fi\n'
-    printf 'exit 0\n'
-  } > "$bin/specify"
-  chmod +x "$bin/specify"
-  printf '{"url":"https://github.com/github/spec-kit.git","vcs_info":{"commit_id":"%s"}}\n' \
-    "$wrong_ref" > "$site/direct_url.json"
+  make_fake_specify_cli "$sandbox" "$wrong_ref"
 
-  # shellcheck disable=SC2031
+  # shellcheck disable=SC2030,SC2031
   PATH="$bin:$PATH"
   export PATH
-  # shellcheck disable=SC2031
+  # shellcheck disable=SC2030,SC2031
   export FROZEN=1
+  # shellcheck disable=SC2030,SC2031
   export SKIP_CLI_UPDATE=1
+  # shellcheck disable=SC2030,SC2031
   export RESOLVED_SPEC_KIT_VERSION="v9.9.9"
+  # shellcheck disable=SC2030,SC2031
   export RESOLVED_SPEC_KIT_REF="$expected_ref"
   if install_cli 2>/dev/null; then
     return 1
@@ -545,16 +641,19 @@ test_cache_cleanup_removes_completed_workflow_lock() (
   [[ ! -e "$PROJECT_DIR/.specify/workflows/.cache" ]]
 )
 
-printf '1..18\n'
+printf '1..21\n'
 run_test 'version and sourceability' test_version_and_sourceability
+run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
 run_test 'catalog install verifies version and skill' test_catalog_install_checks_expected_version_and_skill
 run_test 'catalog merge is additive and idempotent' test_catalog_merge_is_additive_and_idempotent
 run_test 'global skill sync preserves user content and detects tampering' test_atomic_global_skill_sync_preserves_user_content
 run_test 'issue canon files preserve user templates' test_issue_canon_files_preserve_user_template
 run_test 'audit mode unhides install metadata' test_audit_mode_unhides_install_metadata
+run_test 'doctor explains hidden metadata drift' test_doctor_explains_hidden_metadata_drift
 run_test 'frozen lock stays immutable when Ponytail is skipped' test_frozen_lock_is_immutable_when_ponytail_is_skipped
 run_test 'extension tree integrity detects payload tampering' test_extension_tree_integrity_detects_payload_tampering
+run_test 'matching CLI skips force reinstall' test_matching_cli_skips_force_reinstall
 run_test 'frozen skipped CLI requires the locked commit' test_frozen_skip_cli_update_requires_locked_commit
 run_test 'signal handler releases the lock and exits' test_signal_handler_releases_lock_and_exits
 run_test 'Ponytail marketplace path is canonical' test_ponytail_marketplace_path_is_canonical

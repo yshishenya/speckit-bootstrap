@@ -68,14 +68,14 @@ jobs:
           version: '0.11.28'
           enable-cache: true
           cache-dependency-glob: ''
-          cache-suffix: speckit-v0.12.15
+          cache-suffix: speckit-v0.13.0
           prune-cache: false
           ignore-nothing-to-cache: true
 
       - name: Run live bootstrap smoke test
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          SPEC_KIT_VERSION: v0.12.15
+          SPEC_KIT_VERSION: v0.13.0
           SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.3.1
         run: bash tests/smoke-live.sh
 
