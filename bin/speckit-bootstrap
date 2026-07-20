@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.7.0"
+BOOTSTRAP_VERSION="0.7.1"
 
 usage() {
   cat <<'EOF'
@@ -86,6 +86,14 @@ GITHUB_ISSUE_CANON_EXTENSION_URL="${SPECKIT_GITHUB_ISSUE_CANON_URL:-}"
 PONYTAIL_UPSTREAM_AGENTS_PATH="docs/agent-guidance/ponytail-upstream.md"
 PONYTAIL_UPSTREAM_AGENTS_STATUS="skipped"
 TRACK_INSTALL_METADATA="${SPECKIT_TRACK_INSTALL_METADATA:-0}"
+INSTALL_METADATA_PATHS=(
+  ".specify/init-options.json"
+  ".specify/integration.json"
+  ".specify/integrations/speckit.manifest.json"
+  ".specify/integrations/codex.manifest.json"
+  ".specify/extensions/.registry"
+  ".specify/workflows/workflow-registry.json"
+)
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -517,12 +525,13 @@ PY
 }
 
 install_cli() {
+  local installed=""
+  local installed_ref=""
+  local expected_ref
+
   if [[ "$SKIP_CLI_UPDATE" -eq 1 ]]; then
     require_cmd specify
     if [[ "$FROZEN" -eq 1 ]]; then
-      local installed
-      local installed_ref
-      local expected_ref
       installed="$(normalize_tag "$(specify --version | awk '{print $NF}')")"
       installed_ref="$(installed_spec_kit_ref)"
       expected_ref="$(printf '%s' "$RESOLVED_SPEC_KIT_REF" | tr '[:upper:]' '[:lower:]')"
@@ -538,6 +547,21 @@ install_cli() {
     return
   fi
 
+  expected_ref="$(printf '%s' "$RESOLVED_SPEC_KIT_REF" | tr '[:upper:]' '[:lower:]')"
+  if command -v specify >/dev/null 2>&1; then
+    installed="$(specify --version 2>/dev/null | awk '{print $NF}' || true)"
+    [[ -z "$installed" ]] || installed="$(normalize_tag "$installed")"
+    installed_ref="$(installed_spec_kit_ref)"
+    installed_ref="$(printf '%s' "$installed_ref" | tr '[:upper:]' '[:lower:]')"
+    if [[ "$installed_ref" == "$expected_ref" ]] && \
+       { [[ "$RESOLVED_SPEC_KIT_VERSION" != v* ]] || \
+         [[ "$installed" == "$RESOLVED_SPEC_KIT_VERSION" ]]; }; then
+      echo "speckit-bootstrap: specify-cli $RESOLVED_SPEC_KIT_VERSION already matches github/spec-kit@$RESOLVED_SPEC_KIT_REF"
+      return
+    fi
+  fi
+
+  require_cmd uv
   echo "speckit-bootstrap: installing specify-cli $RESOLVED_SPEC_KIT_VERSION from github/spec-kit@$RESOLVED_SPEC_KIT_REF"
   uv tool install specify-cli --force \
     --from "git+https://github.com/github/spec-kit.git@$RESOLVED_SPEC_KIT_REF"
@@ -1886,14 +1910,7 @@ hide_install_metadata_diffs() {
   git rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
 
   local file changed=0
-  for file in \
-    ".specify/init-options.json" \
-    ".specify/integration.json" \
-    ".specify/integrations/speckit.manifest.json" \
-    ".specify/integrations/codex.manifest.json" \
-    ".specify/extensions/.registry" \
-    ".specify/workflows/workflow-registry.json"
-  do
+  for file in "${INSTALL_METADATA_PATHS[@]}"; do
     if git ls-files --error-unmatch "$file" >/dev/null 2>&1; then
       if [[ "$TRACK_INSTALL_METADATA" == "1" ]]; then
         git update-index --no-skip-worktree "$file"
@@ -1911,6 +1928,37 @@ hide_install_metadata_diffs() {
       echo "speckit-bootstrap: hid refresh-only Spec Kit install metadata from git diff"
     fi
   fi
+}
+
+hidden_install_metadata_drift() {
+  git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+
+  local file index_entry index_hash worktree_hash
+  for file in "${INSTALL_METADATA_PATHS[@]}"; do
+    index_entry="$(git -C "$PROJECT_DIR" ls-files -v -- "$file" 2>/dev/null || true)"
+    [[ "$index_entry" == S\ * ]] || continue
+    if [[ ! -f "$PROJECT_DIR/$file" ]]; then
+      printf '%s\n' "$file"
+      continue
+    fi
+    index_hash="$(git -C "$PROJECT_DIR" ls-files --stage -- "$file" | awk 'NR == 1 {print $2}')"
+    worktree_hash="$(git -C "$PROJECT_DIR" hash-object --path="$file" -- "$file" 2>/dev/null || true)"
+    if [[ -z "$index_hash" || -z "$worktree_hash" || "$index_hash" != "$worktree_hash" ]]; then
+      printf '%s\n' "$file"
+    fi
+  done
+}
+
+explain_hidden_install_metadata_drift() {
+  local drift
+  drift="$(hidden_install_metadata_drift)"
+  [[ -n "$drift" ]] || return 0
+
+  echo "speckit-bootstrap: doctor found drift hidden from git status by skip-worktree:" >&2
+  while IFS= read -r path; do
+    printf '  - %s\n' "$path" >&2
+  done <<< "$drift"
+  echo "speckit-bootstrap: audit with: SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap . --doctor" >&2
 }
 
 ensure_codex_integration() {
@@ -2279,18 +2327,14 @@ verify_bootstrap() {
   if [[ "$TRACK_INSTALL_METADATA" == "1" ]] && \
      git -C "$PROJECT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     if git -C "$PROJECT_DIR" ls-files -v \
-      .specify/init-options.json \
-      .specify/integration.json \
-      .specify/integrations/speckit.manifest.json \
-      .specify/integrations/codex.manifest.json \
-      .specify/extensions/.registry \
-      .specify/workflows/workflow-registry.json | grep -q '^S '; then
+      "${INSTALL_METADATA_PATHS[@]}" | grep -q '^S '; then
       echo "speckit-bootstrap: doctor found hidden metadata in audit mode" >&2
       errors=$((errors + 1))
     fi
   fi
 
   if [[ "$errors" -ne 0 ]]; then
+    explain_hidden_install_metadata_drift
     echo "speckit-bootstrap: doctor failed with $errors problem(s)" >&2
     return 1
   fi
@@ -2427,10 +2471,6 @@ main() {
   if [[ "$DRY_RUN" -eq 1 ]]; then
     print_plan
     return 0
-  fi
-
-  if [[ "$SKIP_CLI_UPDATE" -eq 0 ]]; then
-    require_cmd uv
   fi
 
   install_cli

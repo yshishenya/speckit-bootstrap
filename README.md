@@ -79,7 +79,7 @@ Re-run the installer at any time to update. To install a specific release:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.7.0 bash
+  SPECKIT_BOOTSTRAP_VERSION=v0.7.1 bash
 ```
 
 > [!TIP]
@@ -132,6 +132,8 @@ skill digest. A healthy installation reports `speckit-bootstrap: doctor OK`.
 
 - **Official Spec Kit, pinned.** The latest official `v*` tag is resolved to
   its immutable commit SHA before installation.
+- **Fast repeat refreshes.** An installed CLI with the exact requested version
+  and source commit is reused without a forced reinstall.
 - **Codex-native workflows.** Generated `speckit-*` skills are synchronized to
   `~/.agents/skills` and project-local duplicates are removed by default.
 - **Reproducible refreshes.** The lock records versions, commit refs, source
@@ -216,12 +218,18 @@ $speckit-tasks
 $speckit-analyze
 $speckit-taskstoissues
 $speckit-implement
+$speckit-converge
 ```
 
 `$speckit-clarify`, `$speckit-checklist`, and `$speckit-analyze` are quality
 gates you can apply according to risk. Use `$speckit-taskstoissues` for tracked
 feature work with a GitHub remote; skip it for read-only, documentation-only,
 or tiny direct changes.
+
+For significant or high-risk work, run `$speckit-converge` after implementation.
+If it appends tasks, run `$speckit-implement` and `$speckit-converge` again
+before opening the pull request. Skip convergence for read-only,
+documentation-only, or tiny direct changes.
 
 When task-to-issue synchronization runs, the installed extension automatically:
 
@@ -282,7 +290,7 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 Useful recipes:
 
 ```sh
-# Fast refresh without reinstalling specify-cli.
+# Keep the currently installed specify-cli without resolving another version.
 speckit-bootstrap . --skip-cli-update
 
 # Pin or roll back official Spec Kit, then write a new lock.
@@ -364,7 +372,7 @@ bash tests/ci-local.sh
 Run the pinned end-to-end bootstrap smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.12.15 \
+SPEC_KIT_VERSION=v0.13.0 \
   SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
   bash tests/smoke-live.sh
 ```

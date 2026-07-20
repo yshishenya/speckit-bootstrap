@@ -99,4 +99,8 @@ install_tmp=""
 
 echo "speckit-bootstrap installed to $INSTALL_DIR/speckit-bootstrap"
 echo "Source: $source_description"
-echo "Run: speckit-bootstrap [PROJECT_DIR]"
+case ":${PATH:-}:" in
+  *":$INSTALL_DIR:"*) ;;
+  *) printf 'Add it to PATH for this shell: export PATH="%s:%sPATH"\n' "$INSTALL_DIR" '$' ;;
+esac
+echo "Run: $INSTALL_DIR/speckit-bootstrap [PROJECT_DIR]"

@@ -6,6 +6,24 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.7.1] - 2026-07-20
+
+### Added
+
+- Explain when `skip-worktree` hides install-metadata drift from normal Git
+  status and print the exact audit command from a failed doctor run.
+- Print an actionable `PATH` command when the installer target isn't currently
+  executable by name.
+
+### Changed
+
+- Reuse an installed Spec Kit CLI when both its version and immutable upstream
+  commit match, avoiding an unnecessary forced `uv` reinstall.
+- Update the pinned compatibility baseline to Spec Kit v0.13.0 after fresh,
+  update, integrity, frozen, and audit smoke coverage passed.
+- Document the risk-aware `implement -> converge` closeout loop in both English
+  and Russian without making it mandatory for tiny or documentation-only work.
+
 ## [0.7.0] - 2026-07-14
 
 ### Added

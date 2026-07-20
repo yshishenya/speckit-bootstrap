@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.12.15}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.13.0}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
@@ -97,7 +97,12 @@ git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
 LOCK="$PROJECT/.specify/speckit-bootstrap.lock.json"
-"$BOOTSTRAP" "$PROJECT" --skip-cli-update
+NORMAL_REPEAT_LOG="$SANDBOX/normal-repeat.log"
+"$BOOTSTRAP" "$PROJECT" | tee "$NORMAL_REPEAT_LOG"
+if ! grep -Fq 'already matches' "$NORMAL_REPEAT_LOG"; then
+  echo 'smoke-live: a matching CLI was force-reinstalled on normal repeat' >&2
+  exit 1
+fi
 if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
   echo 'smoke-live: a normal repeat bootstrap was not idempotent' >&2
   git -C "$PROJECT" status --short >&2

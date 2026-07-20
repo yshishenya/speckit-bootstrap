@@ -80,7 +80,7 @@ speckit-bootstrap --version
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.7.0 bash
+  SPECKIT_BOOTSTRAP_VERSION=v0.7.1 bash
 ```
 
 > [!TIP]
@@ -134,6 +134,8 @@ workflow, payload расширений, состояние Ponytail, инстр�
 
 - **Официальный Spec Kit с pin.** Последний официальный тег `v*` разрешается в
   неизменяемый commit SHA до установки.
+- **Быстрые повторные обновления.** Установленный CLI с точным совпадением
+  версии и commit источника используется без принудительной переустановки.
 - **Workflow для Codex.** Сгенерированные навыки `speckit-*` синхронизируются в
   `~/.agents/skills`, а локальные дубликаты по умолчанию удаляются.
 - **Воспроизводимые обновления.** Lock хранит версии, commit refs, URL
@@ -217,12 +219,18 @@ $speckit-tasks
 $speckit-analyze
 $speckit-taskstoissues
 $speckit-implement
+$speckit-converge
 ```
 
 `$speckit-clarify`, `$speckit-checklist` и `$speckit-analyze` — проверки
 качества, которые выбираются по уровню риска. Используйте
 `$speckit-taskstoissues` для отслеживаемой feature-работы с GitHub remote; для
 read-only, документационных и совсем небольших прямых изменений он не нужен.
+
+Для значимой или high-risk работы запускайте `$speckit-converge` после
+реализации. Если он добавил задачи, повторите `$speckit-implement`, затем
+`$speckit-converge` перед созданием pull request. Для read-only, документации и
+совсем небольших прямых изменений convergence не требуется.
 
 При синхронизации задач установленное расширение автоматически:
 
@@ -282,7 +290,7 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 Полезные рецепты:
 
 ```sh
-# Быстрое обновление без переустановки specify-cli.
+# Использовать текущий specify-cli без определения другой версии.
 speckit-bootstrap . --skip-cli-update
 
 # Закрепить или откатить Spec Kit и записать новый lock.
@@ -364,7 +372,7 @@ bash tests/ci-local.sh
 Запустите закреплённый end-to-end smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.12.15 \
+SPEC_KIT_VERSION=v0.13.0 \
   SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
   bash tests/smoke-live.sh
 ```
