@@ -45,25 +45,25 @@ speckit-bootstrap .
 | Каждый компонент устанавливается и связывается вручную | Одна команда устанавливает или обновляет весь набор |
 | «Последняя версия» незаметно меняется | Каждый тег, commit, источник и digest записывается в lock |
 | Drift обнаруживается во время реализации | `--doctor` находит расхождения до начала работы |
-| Обновление оставляет шумный или частичный результат | Изменения подготавливаются, проверяются и применяются атомарно |
+| Обновление оставляет шумный или частичный результат | Служебный шум скрывается, а неполное состояние не проходит проверку |
 | Правила агентов и GitHub различаются между проектами | Навыки Codex и issue canon устанавливаются одинаково |
 | Для отката приходится восстанавливать окружение вручную | `--frozen` повторяет и проверяет зафиксированный набор |
 
 ## Быстрый старт
 
 Нужны macOS или Ubuntu с `git`, `curl`, `python3` и
-[`uv`](https://docs.astral.sh/uv/). Также необходим `codex` CLI, если bootstrap
-не запускается с `--skip-ponytail`.
+[`uv`](https://docs.astral.sh/uv/). `codex` CLI требуется только для
+опциональной установки Ponytail.
 
 ### 1. Установите или обновите
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh | bash
 ```
 
-Установщик определяет последний GitHub Release, скачивает исполняемый файл и
-его SHA-256, проверяет checksum и синтаксис shell, а затем атомарно устанавливает
-команду в:
+Первый установщик загружается из immutable release tag. Он определяет последний
+GitHub Release, скачивает исполняемый файл и его SHA-256, проверяет checksum и
+синтаксис shell, а затем атомарно устанавливает команду в:
 
 ```text
 ~/.local/bin/speckit-bootstrap
@@ -79,8 +79,8 @@ speckit-bootstrap --version
 Повторный запуск установщика обновляет bootstrap. Для конкретной версии:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.7.1 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.8.0 bash
 ```
 
 > [!TIP]
@@ -110,11 +110,11 @@ speckit-bootstrap .
 ```text
 .specify/
 .specify/speckit-bootstrap.lock.json
+.agents/skills/speckit-*/
 AGENTS.md
 docs/agent-guidance/
 .github/ISSUE_TEMPLATE/
 .github/pull_request_template.md
-~/.agents/skills/speckit-*
 ```
 
 Перед commit проверьте diff созданной конфигурации проекта.
@@ -126,8 +126,8 @@ speckit-bootstrap . --doctor
 ```
 
 `--doctor` ничего не изменяет. Он проверяет источник CLI, зафиксированный
-workflow, payload расширений, состояние Ponytail, инструкции проекта и digest
-каждого управляемого глобального навыка. Исправная установка сообщает
+workflow, payload расширений, опциональное состояние Ponytail, инструкции
+проекта и digest каждого project-local навыка. Исправная установка сообщает
 `speckit-bootstrap: doctor OK`.
 
 ## Что вы получаете
@@ -136,15 +136,16 @@ workflow, payload расширений, состояние Ponytail, инстр�
   неизменяемый commit SHA до установки.
 - **Быстрые повторные обновления.** Установленный CLI с точным совпадением
   версии и commit источника используется без принудительной переустановки.
-- **Workflow для Codex.** Сгенерированные навыки `speckit-*` синхронизируются в
-  `~/.agents/skills`, а локальные дубликаты по умолчанию удаляются.
+- **Workflow для Codex.** Сгенерированные навыки `speckit-*` остаются в
+  `.agents/skills` репозитория, поэтому каждый проект использует свою
+  зафиксированную версию.
 - **Воспроизводимые обновления.** Lock хранит версии, commit refs, URL
   источников, hashes workflow, деревья расширений и digests навыков.
 - **Безопасный GitHub-трекинг.** Встроенный
   [`github-issue-canon`](https://github.com/yshishenya/spec-kit-ext-github-issue-canon)
   добавляет формы задач, шаблон pull request, validation hooks и правила
   closeout.
-- **Интеграцию Ponytail.** Codex управляет жизненным циклом плагина
+- **Опциональную интеграцию Ponytail.** С `--with-ponytail` Codex управляет жизненным циклом плагина
   [`Ponytail`](https://github.com/DietrichGebert/ponytail), а bootstrap закрепляет
   его источник и поддерживает инструкции проекта в актуальном виде.
 - **Сохранность пользовательского состояния.** Существующие каталоги,
@@ -159,9 +160,9 @@ workflow, payload расширений, состояние Ponytail, инстр�
 ```mermaid
 flowchart LR
     A["speckit-bootstrap ."] --> B["Официальный GitHub Spec Kit<br/>тег разрешён в commit SHA"]
-    A --> C["Навыки Codex<br/>~/.agents/skills"]
+    A --> C["Навыки Codex<br/>.agents/skills"]
     A --> D["GitHub issue canon<br/>шаблоны + hooks"]
-    A --> E["Плагин Ponytail<br/>pin источника + инструкции"]
+    A -. опционально .-> E["Плагин Ponytail<br/>pin источника + инструкции"]
     B --> F["Воспроизводимый lock"]
     C --> F
     D --> F
@@ -170,8 +171,8 @@ flowchart LR
 ```
 
 Bootstrap никогда не изменяет upstream-репозитории. Он добавляет явные и
-проверяемые управляемые секции в файлы проекта, подготавливает глобальные
-навыки до замены и восстанавливает предыдущее состояние при ошибке.
+проверяемые управляемые секции в файлы проекта и хранит исполняемые навыки
+вместе с проектом, который их использует.
 
 ### Сначала актуальное, затем зафиксированное
 
@@ -179,7 +180,8 @@ Bootstrap никогда не изменяет upstream-репозитории. 
 
 1. Определяет последние разрешённые release tags.
 2. Разрешает каждый тег в неизменяемый commit.
-3. Устанавливает и проверяет workflow, расширения, плагин и навыки.
+3. Устанавливает и проверяет immutable workflow, расширения, project-local
+   навыки и опциональный плагин.
 4. Записывает точные источники и digests в
    `.specify/speckit-bootstrap.lock.json`.
 5. Проверяет готовую установку перед успешным завершением.
@@ -192,6 +194,12 @@ speckit-bootstrap . --frozen
 
 Frozen-режим сохраняет lock неизменным и завершает работу с ошибкой, если
 зафиксированные исполняемые данные отличаются.
+
+Lock-файлы v0.7 используют schema v2. Один раз запустите v0.8 без `--frozen`,
+чтобы пересоздать их в schema v3, и только затем снова включайте frozen-режим.
+Миграция сохраняет все пользовательские копии `speckit-*` и предупреждает,
+когда дубликаты стоит удалить вручную: проектные файлы не дают права удалять
+данные из домашнего каталога.
 
 ## Ежедневный процесс
 
@@ -277,14 +285,15 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 
 | Опция | Результат |
 | --- | --- |
-| `--doctor` | Проверить состояние проекта и пользователя без изменений |
+| `--doctor` | Проверить lock-состояние проекта и опциональный Ponytail без изменений |
 | `--dry-run` | Определить входные версии и показать только план изменений |
 | `--version` | Показать версию bootstrap и завершить работу |
 | `--frozen` | Использовать и проверить версии из lock-файла проекта |
 | `--json` | Оставить в stdout только один машиночитаемый результат |
-| `--keep-local-skills` | Сохранить локальные дубликаты сгенерированных навыков |
+| `--keep-local-skills` | Устаревшая no-op опция; локальные навыки сохраняются всегда |
 | `--skip-cli-update` | Использовать уже установленный `specify` CLI |
-| `--skip-ponytail` | Не обновлять плагин Ponytail и его инструкции |
+| `--skip-ponytail` | Принудительно отключить Ponytail, включённый окружением |
+| `--with-ponytail` | Установить/обновить Ponytail и инструкции проекта |
 | `-h`, `--help` | Показать полную справку команды |
 
 Полезные рецепты:
@@ -296,14 +305,11 @@ speckit-bootstrap . --skip-cli-update
 # Закрепить или откатить Spec Kit и записать новый lock.
 SPEC_KIT_VERSION=vX.Y.Z speckit-bootstrap .
 
-# Попробовать текущую ветку main официального Spec Kit.
-SPEC_KIT_VERSION=main speckit-bootstrap .
-
 # Показать служебные install-метаданные для аудита или релиза.
 SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 
-# Запустить без Codex/Ponytail в headless-окружении.
-speckit-bootstrap . --skip-ponytail
+# Явно включить user-level интеграцию Ponytail.
+speckit-bootstrap . --with-ponytail
 ```
 
 ### Переменные окружения
@@ -315,7 +321,7 @@ speckit-bootstrap . --skip-ponytail
 | `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Закрепить release tag issue-canon |
 | `SPECKIT_GITHUB_ISSUE_CANON_URL` | Использовать проверенный пользовательский ZIP |
 | `SPECKIT_PONYTAIL_VERSION` | Закрепить release tag Ponytail |
-| `SPECKIT_PONYTAIL=0` | Отключить операции с плагином и инструкциями Ponytail |
+| `SPECKIT_PONYTAIL=1` | Включить операции с плагином и инструкциями Ponytail |
 | `SPECKIT_TRACK_INSTALL_METADATA=1` | Показать служебные метаданные в Git diff |
 | `SPECKIT_BOOTSTRAP_INSTALL_DIR` | Путь установки; по умолчанию `~/.local/bin` |
 | `SPECKIT_BOOTSTRAP_VERSION` | Release tag bootstrap; по умолчанию `latest` |
@@ -334,8 +340,7 @@ speckit-bootstrap . --skip-ponytail
 - `python3`
 - [`uv`](https://docs.astral.sh/uv/)
 
-Когда Ponytail включён, требуется `codex` CLI. В headless-окружении используйте
-`--skip-ponytail`.
+`codex` CLI требуется только при явном включении Ponytail.
 
 Поддерживаемая матрица:
 
@@ -350,10 +355,14 @@ speckit-bootstrap . --skip-ponytail
 supply chain, а не как безобидную документацию.
 
 - При установке executable сверяется с опубликованным SHA-256.
+- Первый установщик в документации закреплён на immutable release tag.
 - Внешние release tags разрешаются в неизменяемые commits.
 - Release asset issue-canon сверяется с checksum каталога.
 - Управляемый marketplace Ponytail закрепляет источник плагина на commit.
-- Lock schema v2 хранит полные деревья расширений и управляемых навыков.
+- Lock schema v3 хранит полные деревья расширений и project-local навыков, а
+  также immutable URL источника workflow.
+- Управляемые пути проекта не могут быть symlink, а doctor отклоняет
+  незаписанные исполняемые навыки `speckit-*`.
 - GitHub Actions закреплены полными commit SHA и проверяются `zizmor`.
 - CI проверяет Bash syntax, ShellCheck, изолированные unit tests, безопасность
   workflow и живой bootstrap на macOS и Ubuntu.
@@ -372,7 +381,7 @@ bash tests/ci-local.sh
 Запустите закреплённый end-to-end smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.13.0 \
+SPEC_KIT_VERSION=v0.15.2 \
   SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
   bash tests/smoke-live.sh
 ```

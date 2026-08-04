@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.13.0}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.15.2}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
@@ -60,6 +60,33 @@ data = json.loads(sys.argv[1])
 assert data["status"] == "ready"
 PY
 
+LOCK="$PROJECT/.specify/speckit-bootstrap.lock.json"
+python3 - \
+  "$LOCK" \
+  "$PROJECT/.specify/workflows/workflow-registry.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+lock = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+registry = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
+source = registry["workflows"]["speckit"]["source"]
+expected = (
+    "https://raw.githubusercontent.com/github/spec-kit/"
+    f"{lock['spec_kit']['ref']}/workflows/speckit/workflow.yml"
+)
+assert lock["schema_version"] == 3
+assert source == expected
+assert lock["workflow"]["source_url"] == expected
+assert "/main/" not in source
+assert lock["project_skills"]
+PY
+
+if compgen -G "$HOME/.agents/skills/speckit-*" >/dev/null; then
+  echo 'smoke-live: bootstrap leaked project skills into the user scope' >&2
+  exit 1
+fi
+
 WORKFLOW="$PROJECT/.specify/workflows/speckit/workflow.yml"
 WORKFLOW_BACKUP="$SANDBOX/workflow.yml"
 cp "$WORKFLOW" "$WORKFLOW_BACKUP"
@@ -82,32 +109,33 @@ fi
 mv "$EXTENSION_BACKUP" "$EXTENSION_SCRIPT"
 "$BOOTSTRAP" "$PROJECT" --doctor
 
-GLOBAL_SKILL="$HOME/.agents/skills/speckit-plan/SKILL.md"
-GLOBAL_SKILL_BACKUP="$SANDBOX/speckit-plan-SKILL.md"
-cp -p "$GLOBAL_SKILL" "$GLOBAL_SKILL_BACKUP"
-printf '\n<!-- global skill tamper probe -->\n' >> "$GLOBAL_SKILL"
+PROJECT_SKILL="$PROJECT/.agents/skills/speckit-plan/SKILL.md"
+PROJECT_SKILL_BACKUP="$SANDBOX/speckit-plan-SKILL.md"
+cp -p "$PROJECT_SKILL" "$PROJECT_SKILL_BACKUP"
+printf '\n<!-- project skill tamper probe -->\n' >> "$PROJECT_SKILL"
 if "$BOOTSTRAP" "$PROJECT" --doctor >/dev/null 2>&1; then
-  echo 'smoke-live: doctor accepted a managed global skill that differed from the lock' >&2
+  echo 'smoke-live: doctor accepted a project skill that differed from the lock' >&2
   exit 1
 fi
-mv "$GLOBAL_SKILL_BACKUP" "$GLOBAL_SKILL"
+mv "$PROJECT_SKILL_BACKUP" "$PROJECT_SKILL"
 "$BOOTSTRAP" "$PROJECT" --doctor
 
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
-LOCK="$PROJECT/.specify/speckit-bootstrap.lock.json"
-NORMAL_REPEAT_LOG="$SANDBOX/normal-repeat.log"
-"$BOOTSTRAP" "$PROJECT" | tee "$NORMAL_REPEAT_LOG"
-if ! grep -Fq 'already matches' "$NORMAL_REPEAT_LOG"; then
-  echo 'smoke-live: a matching CLI was force-reinstalled on normal repeat' >&2
-  exit 1
-fi
-if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
-  echo 'smoke-live: a normal repeat bootstrap was not idempotent' >&2
-  git -C "$PROJECT" status --short >&2
-  exit 1
-fi
+for repeat in 1 2; do
+  NORMAL_REPEAT_LOG="$SANDBOX/normal-repeat-$repeat.log"
+  "$BOOTSTRAP" "$PROJECT" | tee "$NORMAL_REPEAT_LOG"
+  if ! grep -Fq 'already matches' "$NORMAL_REPEAT_LOG"; then
+    echo 'smoke-live: a matching CLI was force-reinstalled on normal repeat' >&2
+    exit 1
+  fi
+  if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
+    echo "smoke-live: normal repeat $repeat was not idempotent" >&2
+    git -C "$PROJECT" status --short >&2
+    exit 1
+  fi
+done
 
 LOCK_BEFORE="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
 "$BOOTSTRAP" "$PROJECT" --skip-cli-update --frozen
@@ -130,4 +158,4 @@ if git -C "$PROJECT" ls-files -v .specify | grep -q '^S '; then
 fi
 
 SPECKIT_TRACK_INSTALL_METADATA=1 "$BOOTSTRAP" "$PROJECT" --doctor
-echo 'smoke-live: fresh install, update path, integrity probes, JSON doctor, frozen rerun, and audit mode passed'
+echo 'smoke-live: fresh install, two stable repeats, immutable workflow, integrity probes, JSON doctor, frozen rerun, and audit mode passed'

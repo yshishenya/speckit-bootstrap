@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.7.1" ]]
+  [[ "$output" == "speckit-bootstrap 0.8.0" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -92,6 +92,48 @@ PY
     resolve_issue_canon_catalog_entry >/dev/null 2>&1; then
     return 1
   fi
+)
+
+test_pinned_issue_canon_uses_tagged_catalog() (
+  local sandbox="$TEST_ROOT/pinned-catalog"
+  local spec_ref canon_ref pinned_catalog
+  mkdir -p "$sandbox/project"
+  spec_ref="$(printf 'a%.0s' {1..40})"
+  canon_ref="$(printf 'b%.0s' {1..40})"
+  pinned_catalog="https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/$canon_ref/catalog.json"
+
+  PROJECT_DIR="$sandbox/project"
+  FROZEN=0
+  SKIP_CLI_UPDATE=0
+  SKIP_PONYTAIL=1
+  export GITHUB_ISSUE_CANON_EXTENSION_URL=""
+  export SPECKIT_GITHUB_ISSUE_CANON_VERSION="v0.3.1"
+  unset SPECKIT_EXTENSION_CATALOG_URL
+
+  # shellcheck disable=SC2317,SC2329
+  resolve_spec_kit_version() { printf 'v0.15.2\n'; }
+  # shellcheck disable=SC2317,SC2329
+  resolve_tag_commit() {
+    case "$1" in
+      https://github.com/github/spec-kit.git) printf '%s\n' "$spec_ref" ;;
+      *) printf '%s\n' "$canon_ref" ;;
+    esac
+  }
+  # shellcheck disable=SC2317,SC2329
+  require_remote_tag() { :; }
+  # shellcheck disable=SC2317,SC2329
+  resolve_issue_canon_catalog_entry() {
+    printf '%s\n' "$YAN_EXTENSION_CATALOG_URL" >> "$sandbox/catalog-calls"
+    [[ "$YAN_EXTENSION_CATALOG_URL" == "$pinned_catalog" ]] || return 1
+    printf 'v0.3.1\thttps://example.test/github-issue-canon-v0.3.1.zip\t%s\n' \
+      "$(printf 'c%.0s' {1..64})"
+  }
+
+  prepare_versions
+
+  [[ "$(wc -l < "$sandbox/catalog-calls")" -eq 1 ]] || return 1
+  [[ "$RESOLVED_ISSUE_CANON_CATALOG_URL" == "$pinned_catalog" ]] || return 1
+  [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 ]]
 )
 
 test_catalog_install_checks_expected_version_and_skill() (
@@ -204,42 +246,82 @@ make_fake_specify_cli() {
     "$commit" > "$site/direct_url.json"
 }
 
-test_atomic_global_skill_sync_preserves_user_content() (
+test_project_skill_manifest_detects_tampering() (
   local sandbox="$TEST_ROOT/skills"
+  PROJECT_DIR="$sandbox/project"
+  mkdir -p "$PROJECT_DIR/.agents/skills/speckit-plan"
+  printf 'project plan\n' > "$PROJECT_DIR/.agents/skills/speckit-plan/SKILL.md"
+
+  capture_project_skills_state
+  verify_project_skills
+
+  printf 'tampered\n' >> "$PROJECT_DIR/.agents/skills/speckit-plan/SKILL.md"
+  if verify_project_skills 2>/dev/null; then
+    return 1
+  fi
+  printf 'project plan\n' > "$PROJECT_DIR/.agents/skills/speckit-plan/SKILL.md"
+
+  mkdir -p "$PROJECT_DIR/.agents/skills/speckit-unrecorded"
+  printf 'unrecorded\n' > "$PROJECT_DIR/.agents/skills/speckit-unrecorded/SKILL.md"
+  if verify_project_skills 2>/dev/null; then
+    return 1
+  fi
+  rm -rf "$PROJECT_DIR/.agents/skills/speckit-unrecorded"
+
+  ln -s speckit-plan "$PROJECT_DIR/.agents/skills/speckit-linked"
+  ! verify_project_skills 2>/dev/null
+)
+
+test_schema_v2_migration_preserves_all_global_skills() (
+  local sandbox="$TEST_ROOT/legacy-global-skills"
+  local global_skills="$sandbox/home/.agents/skills"
+  local lock="$sandbox/project/.specify/speckit-bootstrap.lock.json"
+  local unchanged_digest modified_digest output
   # shellcheck disable=SC2030,SC2031
   export HOME="$sandbox/home"
   PROJECT_DIR="$sandbox/project"
   mkdir -p \
-    "$PROJECT_DIR/.agents/skills/speckit-plan" \
-    "$HOME/.agents/skills/speckit-project-custom" \
-    "$HOME/.agents/skills/unrelated-skill"
-  printf 'new plan\n' > "$PROJECT_DIR/.agents/skills/speckit-plan/SKILL.md"
-  printf 'keep custom\n' > "$HOME/.agents/skills/speckit-project-custom/SKILL.md"
-  printf 'keep unrelated\n' > "$HOME/.agents/skills/unrelated-skill/SKILL.md"
+    "$global_skills/speckit-unchanged" \
+    "$global_skills/speckit-modified" \
+    "$(dirname "$lock")"
+  printf 'unchanged\n' > "$global_skills/speckit-unchanged/SKILL.md"
+  printf 'original\n' > "$global_skills/speckit-modified/SKILL.md"
+  unchanged_digest="$(tree_sha256 "$global_skills/speckit-unchanged")"
+  modified_digest="$(tree_sha256 "$global_skills/speckit-modified")"
+  python3 - "$lock" "$unchanged_digest" "$modified_digest" <<'PY'
+import json
+import sys
+from pathlib import Path
 
-  acquire_global_lock
-  sync_global_skills
-  capture_managed_skills_state
-  verify_global_skills
-  release_global_lock
+Path(sys.argv[1]).write_text(json.dumps({
+    "schema_version": 2,
+    "global_skills": {
+        "speckit-modified": sys.argv[3],
+        "speckit-unchanged": sys.argv[2],
+    },
+}) + "\n", encoding="utf-8")
+PY
+  printf 'user edit\n' >> "$global_skills/speckit-modified/SKILL.md"
 
-  grep -Fq 'new plan' "$HOME/.agents/skills/speckit-plan/SKILL.md" || return 1
-  grep -Fq 'keep custom' "$HOME/.agents/skills/speckit-project-custom/SKILL.md" || return 1
-  grep -Fq 'keep unrelated' "$HOME/.agents/skills/unrelated-skill/SKILL.md" || return 1
-  [[ ! -e "$HOME/.agents/.speckit-bootstrap.lock" ]] || return 1
+  output="$(migrate_legacy_global_skills 2>&1)"
 
-  printf 'tampered\n' >> "$HOME/.agents/skills/speckit-plan/SKILL.md"
-  if verify_global_skills 2>/dev/null; then
+  [[ -f "$global_skills/speckit-unchanged/SKILL.md" ]] || return 1
+  [[ -f "$global_skills/speckit-modified/SKILL.md" ]] || return 1
+  grep -Fq 'preserved legacy user-level skills' <<< "$output" || return 1
+  grep -Fq 'remove duplicates manually' <<< "$output"
+)
+
+test_managed_project_paths_reject_symlinks() (
+  local sandbox="$TEST_ROOT/managed-path-symlink"
+  PROJECT_DIR="$sandbox/project"
+  mkdir -p "$PROJECT_DIR" "$sandbox/outside"
+  printf 'outside\n' > "$sandbox/outside/AGENTS.md"
+  ln -s "$sandbox/outside/AGENTS.md" "$PROJECT_DIR/AGENTS.md"
+
+  if require_safe_managed_paths >/dev/null 2>&1; then
     return 1
   fi
-  sync_global_skills
-  verify_global_skills
-
-  mkdir "$HOME/.agents/.speckit-bootstrap.lock"
-  printf '99999999\n' > "$HOME/.agents/.speckit-bootstrap.lock/pid"
-  acquire_global_lock
-  release_global_lock
-  [[ ! -e "$HOME/.agents/.speckit-bootstrap.lock" ]]
+  [[ "$(cat "$sandbox/outside/AGENTS.md")" == "outside" ]]
 )
 
 test_issue_canon_files_preserve_user_template() (
@@ -312,6 +394,42 @@ test_doctor_explains_hidden_metadata_drift() (
     <<< "$output"
 )
 
+test_integration_refresh_respects_local_changes() (
+  local sandbox="$TEST_ROOT/integration-refresh"
+  local calls="$sandbox/calls"
+  local scenario="upgrade"
+  mkdir -p "$sandbox/project"
+  PROJECT_DIR="$sandbox/project"
+
+  # shellcheck disable=SC2317,SC2329
+  specify() {
+    printf '%s\n' "$*" >> "$calls"
+    if [[ "$1 $2" == "integration status" ]]; then
+      if [[ "$scenario" == "missing" ]]; then
+        printf 'No integration currently installed\n'
+      else
+        printf 'Integration: codex\n'
+      fi
+      return 0
+    fi
+    [[ "$scenario" != "upgrade" ]]
+  }
+
+  if ensure_codex_integration >/dev/null 2>&1; then
+    return 1
+  fi
+  grep -Fxq 'integration upgrade codex --integration-options=--skills' "$calls" || return 1
+  if grep -Fq -- '--force' "$calls" || grep -Fq 'integration install' "$calls"; then
+    return 1
+  fi
+
+  : > "$calls"
+  scenario="missing"
+  ensure_codex_integration >/dev/null
+  grep -Fxq 'integration install codex --integration-options=--skills' "$calls" || return 1
+  ! grep -Fq -- '--force' "$calls"
+)
+
 test_frozen_lock_is_immutable_when_ponytail_is_skipped() (
   local sandbox="$TEST_ROOT/frozen-lock"
   PROJECT_DIR="$sandbox/project"
@@ -324,8 +442,8 @@ from pathlib import Path
 sha = "a" * 40
 digest = "b" * 64
 data = {
-    "schema_version": 2,
-    "bootstrap_version": "0.7.1",
+    "schema_version": 3,
+    "bootstrap_version": "0.8.0",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",
@@ -339,14 +457,19 @@ data = {
         "agent_context": {"version": "9.9.9", "manifest_hash": digest, "tree_sha256": digest},
         "git": {"version": "9.9.9", "manifest_hash": digest, "tree_sha256": digest},
     },
-    "workflow": {"id": "speckit", "version": "9.9.9", "sha256": digest},
+    "workflow": {
+        "id": "speckit",
+        "version": "9.9.9",
+        "sha256": digest,
+        "source_url": f"https://raw.githubusercontent.com/github/spec-kit/{sha}/workflows/speckit/workflow.yml",
+    },
     "ponytail": {
         "enabled": True,
         "version": "v9.9.9",
         "ref": sha,
         "marketplace_sha256": digest,
     },
-    "global_skills": {"speckit-plan": digest},
+    "project_skills": {"speckit-plan": digest},
 }
 Path(sys.argv[1]).write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 PY
@@ -461,25 +584,20 @@ test_frozen_skip_cli_update_requires_locked_commit() (
   install_cli
 )
 
-test_signal_handler_releases_lock_and_exits() (
-  local sandbox="$TEST_ROOT/signal"
-  local output status
-  mkdir -p "$sandbox/home"
-  set +e
-  output="$(HOME="$sandbox/home" /bin/bash -c '
-    set -euo pipefail
-    source "$1"
-    acquire_global_lock
-    install_global_lock_traps
-    kill -TERM "$$"
-    echo continued
-  ' _ "$BOOTSTRAP" 2>&1)"
-  status=$?
-  set -e
+test_ponytail_is_opt_in() (
+  local sandbox="$TEST_ROOT/ponytail-opt-in"
+  mkdir -p "$sandbox"
 
-  [[ "$status" -eq 143 ]] || return 1
-  [[ "$output" != *continued* ]] || return 1
-  [[ ! -e "$sandbox/home/.agents/.speckit-bootstrap.lock" ]]
+  PROJECT_DIR=""
+  SKIP_PONYTAIL=1
+  unset SPECKIT_PONYTAIL
+  parse_args "$sandbox"
+  [[ "$SKIP_PONYTAIL" -eq 1 ]] || return 1
+
+  PROJECT_DIR=""
+  SKIP_PONYTAIL=1
+  parse_args "$sandbox" --with-ponytail
+  [[ "$SKIP_PONYTAIL" -eq 0 ]]
 )
 
 test_ponytail_marketplace_path_is_canonical() (
@@ -553,6 +671,8 @@ assert "actions/checkout@" not in publish
 assert "bin/speckit-bootstrap" not in publish
 assert '--repo "$GITHUB_REPOSITORY"' in publish
 assert "--notes-file dist/release-notes.md" in publish
+assert 'gh release verify "$RELEASE_TAG"' in publish
+assert publish.count('gh release verify-asset "$RELEASE_TAG"') == 2
 PY
 }
 
@@ -560,6 +680,7 @@ test_ci_topology_avoids_duplicate_sha_runs() {
   python3 - \
     "$REPO_ROOT/.github/workflows/ci.yml" \
     "$REPO_ROOT/.github/workflows/upstream-canary.yml" \
+    "$REPO_ROOT/.github/dependabot.yml" \
     "$BOOTSTRAP" \
     "$REPO_ROOT/tests/smoke-live.sh" <<'PY'
 import sys
@@ -567,8 +688,9 @@ from pathlib import Path
 
 ci = Path(sys.argv[1]).read_text(encoding="utf-8")
 canary = Path(sys.argv[2]).read_text(encoding="utf-8")
-bootstrap = Path(sys.argv[3]).read_text(encoding="utf-8")
-smoke = Path(sys.argv[4]).read_text(encoding="utf-8")
+dependabot = Path(sys.argv[3]).read_text(encoding="utf-8")
+bootstrap = Path(sys.argv[4]).read_text(encoding="utf-8")
+smoke = Path(sys.argv[5]).read_text(encoding="utf-8")
 trigger_block = ci.split("permissions:", 1)[0]
 assert "pull_request:" in trigger_block
 assert "workflow_dispatch:" in trigger_block
@@ -580,6 +702,10 @@ assert "Current Codex and latest Ponytail" in canary
 assert "npm ci --ignore-scripts --prefix tests/canary" in canary
 assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
 assert "GITHUB_TOKEN: ${{ github.token }}" in ci
+assert "SPEC_KIT_VERSION: v0.15.2" in ci
+assert "zizmor==1.29.0" in ci
+assert "update-types:" in dependabot
+assert "- major" not in dependabot
 assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
 assert '\"token\":' not in smoke
 assert "--skip-ponytail" not in smoke
@@ -587,41 +713,92 @@ assert "--branch-numbering" not in bootstrap
 PY
 }
 
-test_workflow_update_failure_does_not_fall_back_to_install() (
-  local sandbox="$TEST_ROOT/workflow-update-failure"
+test_workflow_install_failure_is_fatal() (
+  local sandbox="$TEST_ROOT/workflow-install-failure"
   local calls="$sandbox/calls"
-  mkdir -p "$sandbox"
+  PROJECT_DIR="$sandbox/project"
+  RESOLVED_SPEC_KIT_REF="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  mkdir -p "$PROJECT_DIR"
 
   # Invoked indirectly by refresh_speckit_workflow.
   # shellcheck disable=SC2317,SC2329
   specify() {
     printf '%s\n' "$*" >> "$calls"
-    echo 'simulated workflow update failure'
+    echo 'simulated workflow install failure'
     return 1
   }
 
   if refresh_speckit_workflow 2>/dev/null; then
     return 1
   fi
-  [[ "$(cat "$calls")" == "workflow update speckit" ]]
+  [[ "$(cat "$calls")" == "workflow add speckit --from $(resolved_workflow_url)" ]]
 )
 
-test_workflow_update_confirms_noninteractively() (
-  local sandbox="$TEST_ROOT/workflow-update-confirm"
+test_workflow_install_uses_immutable_source_noninteractively() (
+  local sandbox="$TEST_ROOT/workflow-install-confirm"
   local answer="$sandbox/answer"
-  mkdir -p "$sandbox"
+  local expected_source
+  PROJECT_DIR="$sandbox/project"
+  RESOLVED_SPEC_KIT_REF="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  expected_source="$(resolved_workflow_url)"
+  mkdir -p "$PROJECT_DIR/.specify/workflows/speckit"
 
   # Invoked indirectly by refresh_speckit_workflow.
   # shellcheck disable=SC2317,SC2329
   specify() {
-    [[ "$*" == "workflow update speckit" ]] || return 1
+    [[ "$*" == "workflow add speckit --from $expected_source" ]] || return 1
     IFS= read -r response
     printf '%s\n' "$response" > "$answer"
-    echo 'Workflow updated'
+    printf 'workflow\n' > "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
+    python3 - "$PROJECT_DIR/.specify/workflows/workflow-registry.json" "$expected_source" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "workflows": {"speckit": {"version": "1.0.0", "source": sys.argv[2]}}
+}) + "\n", encoding="utf-8")
+PY
+    echo 'Workflow installed'
   }
 
   refresh_speckit_workflow >/dev/null
   [[ "$(cat "$answer")" == "y" ]]
+  [[ "$(workflow_source)" == "$expected_source" ]]
+)
+
+test_workflow_refresh_skips_matching_immutable_source() (
+  local sandbox="$TEST_ROOT/workflow-matching"
+  local expected_source
+  local digest
+  PROJECT_DIR="$sandbox/project"
+  RESOLVED_SPEC_KIT_REF="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  expected_source="$(resolved_workflow_url)"
+  mkdir -p "$PROJECT_DIR/.specify/workflows/speckit"
+  printf 'workflow\n' > "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
+  digest="$(sha256_for_test "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml")"
+  python3 - \
+    "$PROJECT_DIR/.specify/workflows/workflow-registry.json" \
+    "$PROJECT_DIR/.specify/speckit-bootstrap.lock.json" \
+    "$expected_source" \
+    "$digest" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "workflows": {"speckit": {"version": "1.0.0", "source": sys.argv[3]}}
+}) + "\n", encoding="utf-8")
+Path(sys.argv[2]).write_text(json.dumps({
+    "workflow": {"sha256": sys.argv[4]}
+}) + "\n", encoding="utf-8")
+PY
+
+  # Invoked only if refresh fails to recognize the immutable installed source.
+  # shellcheck disable=SC2317,SC2329
+  specify() { return 1; }
+
+  refresh_speckit_workflow | grep -Fq 'already matches immutable source'
 )
 
 test_cache_cleanup_removes_completed_workflow_lock() (
@@ -641,27 +818,32 @@ test_cache_cleanup_removes_completed_workflow_lock() (
   [[ ! -e "$PROJECT_DIR/.specify/workflows/.cache" ]]
 )
 
-printf '1..21\n'
+printf '1..26\n'
 run_test 'version and sourceability' test_version_and_sourceability
 run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
+run_test 'pinned issue canon uses its tagged catalog' test_pinned_issue_canon_uses_tagged_catalog
 run_test 'catalog install verifies version and skill' test_catalog_install_checks_expected_version_and_skill
 run_test 'catalog merge is additive and idempotent' test_catalog_merge_is_additive_and_idempotent
-run_test 'global skill sync preserves user content and detects tampering' test_atomic_global_skill_sync_preserves_user_content
+run_test 'project skill manifest detects tampering' test_project_skill_manifest_detects_tampering
+run_test 'schema v2 migration preserves all global skills' test_schema_v2_migration_preserves_all_global_skills
+run_test 'managed project paths reject symlinks' test_managed_project_paths_reject_symlinks
 run_test 'issue canon files preserve user templates' test_issue_canon_files_preserve_user_template
 run_test 'audit mode unhides install metadata' test_audit_mode_unhides_install_metadata
 run_test 'doctor explains hidden metadata drift' test_doctor_explains_hidden_metadata_drift
+run_test 'integration refresh respects local changes' test_integration_refresh_respects_local_changes
 run_test 'frozen lock stays immutable when Ponytail is skipped' test_frozen_lock_is_immutable_when_ponytail_is_skipped
 run_test 'extension tree integrity detects payload tampering' test_extension_tree_integrity_detects_payload_tampering
 run_test 'matching CLI skips force reinstall' test_matching_cli_skips_force_reinstall
 run_test 'frozen skipped CLI requires the locked commit' test_frozen_skip_cli_update_requires_locked_commit
-run_test 'signal handler releases the lock and exits' test_signal_handler_releases_lock_and_exits
+run_test 'Ponytail is opt-in' test_ponytail_is_opt_in
 run_test 'Ponytail marketplace path is canonical' test_ponytail_marketplace_path_is_canonical
 run_test 'JSON mode keeps stdout machine-readable' test_json_mode_keeps_stdout_machine_readable
 run_test 'release publish job does not execute repository code' test_release_publish_job_does_not_execute_repository_code
 run_test 'CI topology avoids duplicate SHA runs' test_ci_topology_avoids_duplicate_sha_runs
-run_test 'workflow update failure does not fall back to install' test_workflow_update_failure_does_not_fall_back_to_install
-run_test 'workflow update confirms noninteractively' test_workflow_update_confirms_noninteractively
+run_test 'workflow install failure is fatal' test_workflow_install_failure_is_fatal
+run_test 'workflow install uses immutable source noninteractively' test_workflow_install_uses_immutable_source_noninteractively
+run_test 'workflow refresh skips matching immutable source' test_workflow_refresh_skips_matching_immutable_source
 run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then

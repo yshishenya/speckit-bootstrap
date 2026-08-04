@@ -44,25 +44,25 @@ speckit-bootstrap .
 | Install and wire every component manually | One command installs or refreshes the complete stack |
 | “Latest” changes underneath you | Every resolved tag, commit, source, and payload digest is locked |
 | Drift appears during implementation | `--doctor` detects drift before work starts |
-| Upgrades leave noisy or partial state | Changes are staged, validated, and applied atomically |
+| Upgrades leave noisy or partial state | Refresh-only noise is hidden and incomplete state fails verification |
 | Agent and GitHub conventions vary by project | Reusable Codex skills and issue canon are installed consistently |
 | Rollback means reconstructing an old setup | `--frozen` replays and verifies the recorded dependency set |
 
 ## Quick start
 
 You need macOS or Ubuntu with `git`, `curl`, `python3`, and
-[`uv`](https://docs.astral.sh/uv/). You also need the `codex` CLI unless you run
-bootstrap with `--skip-ponytail`.
+[`uv`](https://docs.astral.sh/uv/). The `codex` CLI is needed only for the
+optional Ponytail setup.
 
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh | bash
 ```
 
-The installer resolves the latest GitHub Release, downloads the executable and
-its SHA-256 file, verifies the checksum and shell syntax, and installs it
-atomically at:
+The first-stage installer comes from the immutable release tag. It resolves the
+latest GitHub Release, downloads the executable and its SHA-256 file, verifies
+the checksum and shell syntax, and installs it atomically at:
 
 ```text
 ~/.local/bin/speckit-bootstrap
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.7.1 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.8.0 bash
 ```
 
 > [!TIP]
@@ -109,11 +109,11 @@ The first successful run creates or refreshes:
 ```text
 .specify/
 .specify/speckit-bootstrap.lock.json
+.agents/skills/speckit-*/
 AGENTS.md
 docs/agent-guidance/
 .github/ISSUE_TEMPLATE/
 .github/pull_request_template.md
-~/.agents/skills/speckit-*
 ```
 
 Review the diff before committing the generated project baseline.
@@ -125,8 +125,9 @@ speckit-bootstrap . --doctor
 ```
 
 `--doctor` is read-only. It checks the installed CLI source, locked workflow,
-extension payloads, Ponytail state, project guidance, and every managed global
-skill digest. A healthy installation reports `speckit-bootstrap: doctor OK`.
+extension payloads, optional Ponytail state, project guidance, and every
+project-local skill digest. A healthy installation reports
+`speckit-bootstrap: doctor OK`.
 
 ## What you get
 
@@ -134,15 +135,15 @@ skill digest. A healthy installation reports `speckit-bootstrap: doctor OK`.
   its immutable commit SHA before installation.
 - **Fast repeat refreshes.** An installed CLI with the exact requested version
   and source commit is reused without a forced reinstall.
-- **Codex-native workflows.** Generated `speckit-*` skills are synchronized to
-  `~/.agents/skills` and project-local duplicates are removed by default.
+- **Codex-native workflows.** Generated `speckit-*` skills stay in the
+  repository's `.agents/skills`, so each project uses its own locked version.
 - **Reproducible refreshes.** The lock records versions, commit refs, source
   URLs, workflow hashes, extension trees, and managed skill digests.
 - **Safe GitHub tracking.** The bundled
   [`github-issue-canon`](https://github.com/yshishenya/spec-kit-ext-github-issue-canon)
   installs structured issue forms, a pull request template, validation hooks,
   and closeout rules.
-- **Ponytail integration.** Codex owns the
+- **Optional Ponytail integration.** With `--with-ponytail`, Codex owns the
   [`Ponytail`](https://github.com/DietrichGebert/ponytail) plugin lifecycle while
   bootstrap pins its source and keeps project guidance current.
 - **Respect for user-owned state.** Existing catalogs, unrelated skills,
@@ -157,9 +158,9 @@ skill digest. A healthy installation reports `speckit-bootstrap: doctor OK`.
 ```mermaid
 flowchart LR
     A["speckit-bootstrap ."] --> B["Official GitHub Spec Kit<br/>tag resolved to commit SHA"]
-    A --> C["Codex skills<br/>~/.agents/skills"]
+    A --> C["Codex skills<br/>.agents/skills"]
     A --> D["GitHub issue canon<br/>templates + hooks"]
-    A --> E["Ponytail plugin<br/>pinned source + guidance"]
+    A -. optional .-> E["Ponytail plugin<br/>pinned source + guidance"]
     B --> F["Reproducibility lock"]
     C --> F
     D --> F
@@ -168,9 +169,8 @@ flowchart LR
 ```
 
 The bootstrap never changes upstream repositories. It applies explicit,
-reviewable managed sections to generated project files, stages global skill
-updates before swapping them, and restores the previous state when a managed
-replacement fails.
+reviewable managed sections to generated project files and keeps executable
+skills versioned with the project that uses them.
 
 ### Latest first, locked afterward
 
@@ -178,7 +178,8 @@ The default non-frozen run intentionally starts from current stable releases:
 
 1. Resolve the latest approved release tags.
 2. Resolve each tag to an immutable commit.
-3. Install and validate the workflow, extensions, plugin, and skills.
+3. Install and validate the immutable workflow, extensions, project skills,
+   and the optional plugin.
 4. Record exact sources and payload digests in
    `.specify/speckit-bootstrap.lock.json`.
 5. Verify the completed installation before reporting success.
@@ -191,6 +192,12 @@ speckit-bootstrap . --frozen
 
 Frozen mode preserves the lock and fails if locked executable inputs have
 drifted.
+
+Locks created by v0.7 use schema v2. Run v0.8 once without `--frozen` to
+regenerate them as schema v3 before using frozen mode again. That migration
+preserves all user-level `speckit-*` copies and warns when manual duplicate
+cleanup may be useful; project files never authorize deletion from your home
+directory.
 
 ## Daily workflow
 
@@ -277,14 +284,15 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 
 | Option | Effect |
 | --- | --- |
-| `--doctor` | Verify project and user state without changing it |
+| `--doctor` | Verify locked project state and optional Ponytail state without changing it |
 | `--dry-run` | Resolve inputs and print the mutation plan only |
 | `--version` | Print the bootstrap version and exit |
 | `--frozen` | Use and verify versions from the project lock |
 | `--json` | Reserve stdout for one machine-readable result |
-| `--keep-local-skills` | Keep generated project-local skill duplicates |
+| `--keep-local-skills` | Deprecated no-op; project-local skills are always kept |
 | `--skip-cli-update` | Use the currently installed `specify` CLI |
-| `--skip-ponytail` | Skip Ponytail plugin and guidance updates |
+| `--skip-ponytail` | Force Ponytail off when enabled by the environment |
+| `--with-ponytail` | Install/update Ponytail plugin and project guidance |
 | `-h`, `--help` | Show complete command help |
 
 Useful recipes:
@@ -296,14 +304,11 @@ speckit-bootstrap . --skip-cli-update
 # Pin or roll back official Spec Kit, then write a new lock.
 SPEC_KIT_VERSION=vX.Y.Z speckit-bootstrap .
 
-# Try the current official Spec Kit main branch.
-SPEC_KIT_VERSION=main speckit-bootstrap .
-
 # Keep refresh-only install metadata visible for an audit or release.
 SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 
-# Run in a headless environment without Codex/Ponytail.
-speckit-bootstrap . --skip-ponytail
+# Explicitly enable the user-level Ponytail integration.
+speckit-bootstrap . --with-ponytail
 ```
 
 ### Environment variables
@@ -315,7 +320,7 @@ speckit-bootstrap . --skip-ponytail
 | `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Pin the issue-canon release tag |
 | `SPECKIT_GITHUB_ISSUE_CANON_URL` | Use an explicitly reviewed custom ZIP |
 | `SPECKIT_PONYTAIL_VERSION` | Pin the Ponytail release tag |
-| `SPECKIT_PONYTAIL=0` | Disable Ponytail plugin and guidance operations |
+| `SPECKIT_PONYTAIL=1` | Enable Ponytail plugin and guidance operations |
 | `SPECKIT_TRACK_INSTALL_METADATA=1` | Expose refresh-only metadata in Git diffs |
 | `SPECKIT_BOOTSTRAP_INSTALL_DIR` | Installer target; defaults to `~/.local/bin` |
 | `SPECKIT_BOOTSTRAP_VERSION` | Bootstrap release tag; defaults to `latest` |
@@ -334,8 +339,7 @@ Required:
 - `python3`
 - [`uv`](https://docs.astral.sh/uv/)
 
-The `codex` CLI is required when Ponytail is enabled. Use `--skip-ponytail` in
-headless environments.
+The `codex` CLI is required only when Ponytail is explicitly enabled.
 
 The maintained compatibility matrix is:
 
@@ -350,10 +354,14 @@ The project treats generated agent instructions as executable supply-chain
 inputs, not harmless documentation.
 
 - Release installation verifies the executable against its published SHA-256.
+- The documented first-stage installer is pinned to the immutable release tag.
 - External release tags are resolved to immutable commits.
 - The issue-canon release asset is verified against the catalog checksum.
 - Ponytail's managed marketplace descriptor pins its plugin source to a commit.
-- Lock schema v2 captures complete extension and managed-skill trees.
+- Lock schema v3 captures complete extension and project-skill trees plus the
+  immutable workflow source URL.
+- Managed project paths reject symlinks, and doctor rejects unrecorded
+  `speckit-*` executable skills.
 - GitHub Actions are pinned by full commit SHA and audited with `zizmor`.
 - CI tests Bash syntax, ShellCheck, isolated units, workflow security, and live
   bootstrap behavior on macOS and Ubuntu.
@@ -372,7 +380,7 @@ bash tests/ci-local.sh
 Run the pinned end-to-end bootstrap smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.13.0 \
+SPEC_KIT_VERSION=v0.15.2 \
   SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
   bash tests/smoke-live.sh
 ```
