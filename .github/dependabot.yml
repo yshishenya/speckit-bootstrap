@@ -10,6 +10,9 @@ updates:
       github-actions:
         patterns:
           - '*'
+        update-types:
+          - minor
+          - patch
   - package-ecosystem: npm
     directory: /tests/canary
     schedule:
@@ -20,3 +23,6 @@ updates:
       codex-canary:
         patterns:
           - '*'
+        update-types:
+          - minor
+          - patch

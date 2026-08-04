@@ -31,5 +31,7 @@ documented mitigation is available.
 - Release tags are resolved to commit SHAs. Ponytail uses a generated local
   marketplace descriptor whose checksum is locked and whose plugin source is
   the resolved commit, avoiding the upstream descriptor's mutable `main` ref.
-- Generated project files and global skills are executable agent inputs. Review
-  their diff before committing or relying on new upstream behavior.
+- Generated project files and project-local skills are executable agent inputs.
+  Review their diff before committing or relying on new upstream behavior.
+- Managed project paths reject symlinks, and release publication verifies the
+  immutable release attestation for both distributed assets.

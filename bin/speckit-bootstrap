@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.7.1"
+BOOTSTRAP_VERSION="0.8.0"
 
 usage() {
   cat <<'EOF'
@@ -12,9 +12,8 @@ Bootstraps GitHub Spec Kit for Codex in one command:
   - initializes or updates project-local .specify state
   - installs official core workflow and extensions
   - configures safe git auto-commit defaults for Spec Kit doc stages
-  - syncs generated speckit-* skills to ~/.agents/skills
-  - removes project-local speckit-* skill duplicates by default
-  - installs/updates the Ponytail Codex plugin and project guidance
+  - keeps generated speckit-* skills project-local in .agents/skills
+  - optionally installs/updates the Ponytail Codex plugin and project guidance
 
 Modes:
   --doctor                  Verify the current installation without changing it.
@@ -24,9 +23,10 @@ Modes:
 Options:
   --frozen                  Use versions from .specify/speckit-bootstrap.lock.json.
   --json                    Print a machine-readable final summary.
-  --keep-local-skills       Keep project-local generated skills after global sync.
+  --keep-local-skills       Deprecated no-op; project-local skills are always kept.
   --skip-cli-update         Use the currently installed specify CLI.
   --skip-ponytail           Skip Ponytail plugin and guidance updates.
+  --with-ponytail           Install/update Ponytail plugin and project guidance.
 
 Environment:
   SPEC_KIT_VERSION=vX.Y.Z   Optional pin for reproducible rollbacks.
@@ -43,14 +43,14 @@ Environment:
   SPECKIT_TRACK_INSTALL_METADATA=1
                             Keep Spec Kit install/version metadata visible in git.
                             Default: hide refresh-only metadata with skip-worktree.
-  SPECKIT_PONYTAIL=0        Skip Ponytail plugin and AGENTS.md guidance.
+  SPECKIT_PONYTAIL=1        Install/update Ponytail plugin and AGENTS.md guidance.
+                            Default: disabled; manage user plugins separately.
 EOF
 }
 
 PROJECT_DIR=""
-KEEP_LOCAL_SKILLS=0
 SKIP_CLI_UPDATE=0
-SKIP_PONYTAIL=0
+SKIP_PONYTAIL=1
 MODE="apply"
 DRY_RUN=0
 FROZEN=0
@@ -76,9 +76,9 @@ RESOLVED_GIT_EXTENSION_TREE_SHA256=""
 RESOLVED_ISSUE_CANON_TREE_SHA256=""
 RESOLVED_WORKFLOW_VERSION=""
 RESOLVED_WORKFLOW_SHA256=""
-RESOLVED_GLOBAL_SKILLS_MANIFEST="{}"
+RESOLVED_PROJECT_SKILLS_MANIFEST="{}"
+RESOLVED_WORKFLOW_SOURCE=""
 PONYTAIL_PLUGIN_STATUS="skipped"
-GLOBAL_LOCK_DIR=""
 JSON_OUTPUT_FD=1
 ISSUE_CANON_INSTALL_FROM_CATALOG=0
 YAN_EXTENSION_CATALOG_URL="${SPECKIT_EXTENSION_CATALOG_URL:-https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/main/catalog.json}"
@@ -96,6 +96,12 @@ INSTALL_METADATA_PATHS=(
 )
 
 parse_args() {
+  case "${SPECKIT_PONYTAIL:-0}" in
+    1|true|True|TRUE|yes|Yes|YES|on|On|ON)
+      SKIP_PONYTAIL=0
+      ;;
+  esac
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --doctor)
@@ -115,7 +121,6 @@ parse_args() {
         shift
         ;;
       --keep-local-skills)
-        KEEP_LOCAL_SKILLS=1
         shift
         ;;
       --skip-cli-update)
@@ -124,6 +129,10 @@ parse_args() {
         ;;
       --skip-ponytail)
         SKIP_PONYTAIL=1
+        shift
+        ;;
+      --with-ponytail)
+        SKIP_PONYTAIL=0
         shift
         ;;
       --version)
@@ -149,12 +158,6 @@ parse_args() {
         ;;
     esac
   done
-
-  case "${SPECKIT_PONYTAIL:-1}" in
-    0|false|False|FALSE|no|No|NO|off|Off|OFF)
-      SKIP_PONYTAIL=1
-      ;;
-  esac
 
   if [[ "$MODE" == "version" || "$MODE" == "help" ]]; then
     return 0
@@ -182,6 +185,56 @@ import sys
 
 print(os.path.realpath(sys.argv[1]))
 PY
+}
+
+require_safe_managed_paths() {
+  local relative path
+  local -a managed_paths=(
+    ".specify"
+    ".specify/speckit-bootstrap.lock.json"
+    ".specify/extensions"
+    ".specify/extensions/.registry"
+    ".specify/extensions/agent-context"
+    ".specify/extensions/git"
+    ".specify/extensions/github-issue-canon"
+    ".specify/integrations"
+    ".specify/scripts"
+    ".specify/templates"
+    ".specify/templates/plan-template.md"
+    ".specify/templates/tasks-template.md"
+    ".specify/workflows"
+    ".specify/workflows/workflow-registry.json"
+    ".specify/workflows/speckit"
+    ".specify/workflows/speckit/workflow.yml"
+    ".agents"
+    ".agents/skills"
+    ".github"
+    ".github/ISSUE_TEMPLATE"
+    ".github/ISSUE_TEMPLATE/config.yml"
+    ".github/ISSUE_TEMPLATE/spec-kit-work-item.yml"
+    ".github/pull_request_template.md"
+    "docs"
+    "docs/agent-guidance"
+    "docs/agent-guidance/github-issue-canon.md"
+    "docs/agent-guidance/ponytail-upstream.md"
+    "AGENTS.md"
+  )
+
+  for relative in "${managed_paths[@]}"; do
+    path="$PROJECT_DIR/$relative"
+    if [[ -L "$path" ]]; then
+      echo "speckit-bootstrap: managed project path must not be a symlink: $relative" >&2
+      return 1
+    fi
+  done
+
+  for path in "$PROJECT_DIR/.agents/skills"/speckit-*; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    if [[ -L "$path" ]]; then
+      echo "speckit-bootstrap: managed project skill must not be a symlink: ${path#"$PROJECT_DIR/"}" >&2
+      return 1
+    fi
+  done
 }
 
 resolve_latest_tag() {
@@ -239,14 +292,22 @@ resolve_issue_canon_catalog_entry() {
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
 
 catalog_url = sys.argv[1]
 try:
-    with urllib.request.urlopen(catalog_url, timeout=30) as response:
-        catalog = json.load(response)
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(catalog_url, timeout=20) as response:
+                catalog = json.load(response)
+            break
+        except (OSError, urllib.error.URLError):
+            if attempt == 2:
+                raise
+            time.sleep(attempt + 1)
     entry = catalog["extensions"]["github-issue-canon"]
     version = str(entry["version"])
     if version.startswith("v"):
@@ -358,8 +419,8 @@ prepare_versions() {
       echo "speckit-bootstrap: --frozen requires $lock" >&2
       return 1
     fi
-    if [[ "$(read_lock_value "$lock" schema_version)" != "2" ]]; then
-      echo "speckit-bootstrap: unsupported lock schema in $lock" >&2
+    if [[ "$(read_lock_value "$lock" schema_version)" != "3" ]]; then
+      echo "speckit-bootstrap: unsupported lock schema in $lock; run once without --frozen to migrate" >&2
       return 1
     fi
     RESOLVED_SPEC_KIT_VERSION="$(read_lock_value "$lock" spec_kit.version)"
@@ -378,7 +439,8 @@ prepare_versions() {
     RESOLVED_GIT_EXTENSION_TREE_SHA256="$(read_lock_value "$lock" extensions.git.tree_sha256)"
     RESOLVED_WORKFLOW_VERSION="$(read_lock_value "$lock" workflow.version)"
     RESOLVED_WORKFLOW_SHA256="$(read_lock_value "$lock" workflow.sha256)"
-    RESOLVED_GLOBAL_SKILLS_MANIFEST="$(read_lock_json "$lock" global_skills)"
+    RESOLVED_WORKFLOW_SOURCE="$(read_lock_value "$lock" workflow.source_url)"
+    RESOLVED_PROJECT_SKILLS_MANIFEST="$(read_lock_json "$lock" project_skills)"
     require_commit_sha "$RESOLVED_SPEC_KIT_REF" "Spec Kit"
     if [[ "$RESOLVED_ISSUE_CANON_REF" != "custom" ]]; then
       require_commit_sha "$RESOLVED_ISSUE_CANON_REF" github-issue-canon
@@ -420,20 +482,29 @@ prepare_versions() {
     RESOLVED_ISSUE_CANON_URL="$GITHUB_ISSUE_CANON_EXTENSION_URL"
   else
     local requested_canon="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
-    local catalog_entry
-    local catalog_version
-    local catalog_url
-    local catalog_sha256
-    catalog_entry="$(resolve_issue_canon_catalog_entry)"
-    IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
+    local catalog_entry=""
+    local catalog_version=""
+    local catalog_url=""
+    local catalog_sha256=""
 
-    if [[ "$requested_canon" == "latest" || "$(normalize_tag "$requested_canon")" == "$catalog_version" ]]; then
+    if [[ "$requested_canon" == "latest" ]]; then
+      catalog_entry="$(resolve_issue_canon_catalog_entry)"
+      IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
       RESOLVED_ISSUE_CANON_VERSION="$catalog_version"
       RESOLVED_ISSUE_CANON_URL="$catalog_url"
       RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
       ISSUE_CANON_INSTALL_FROM_CATALOG=1
     else
       RESOLVED_ISSUE_CANON_VERSION="$(normalize_tag "$requested_canon")"
+      if [[ -n "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
+        catalog_entry="$(resolve_issue_canon_catalog_entry)"
+        IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
+        if [[ "$RESOLVED_ISSUE_CANON_VERSION" == "$catalog_version" ]]; then
+          RESOLVED_ISSUE_CANON_URL="$catalog_url"
+          RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
+          ISSUE_CANON_INSTALL_FROM_CATALOG=1
+        fi
+      fi
     fi
     if [[ -z "$RESOLVED_ISSUE_CANON_VERSION" ]]; then
       echo "speckit-bootstrap: could not resolve github-issue-canon version" >&2
@@ -446,17 +517,26 @@ prepare_versions() {
     RESOLVED_ISSUE_CANON_REF="$(resolve_tag_commit \
       https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git \
       "$RESOLVED_ISSUE_CANON_VERSION")"
-    RESOLVED_ISSUE_CANON_CATALOG_URL="$YAN_EXTENSION_CATALOG_URL"
-    if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 && -z "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
+    if [[ -z "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
       local pinned_catalog_url
       local pinned_catalog_entry
       pinned_catalog_url="https://raw.githubusercontent.com/yshishenya/spec-kit-ext-github-issue-canon/$RESOLVED_ISSUE_CANON_REF/catalog.json"
       pinned_catalog_entry="$(YAN_EXTENSION_CATALOG_URL="$pinned_catalog_url" resolve_issue_canon_catalog_entry)"
-      if [[ "$pinned_catalog_entry" != "$catalog_entry" ]]; then
+      IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$pinned_catalog_entry"
+      if [[ "$catalog_version" != "$RESOLVED_ISSUE_CANON_VERSION" ]]; then
+        echo "speckit-bootstrap: tagged github-issue-canon catalog version differs from $RESOLVED_ISSUE_CANON_VERSION" >&2
+        return 1
+      fi
+      if [[ -n "$catalog_entry" && "$pinned_catalog_entry" != "$catalog_entry" ]]; then
         echo "speckit-bootstrap: tagged github-issue-canon catalog differs from the resolved main catalog" >&2
         return 1
       fi
       RESOLVED_ISSUE_CANON_CATALOG_URL="$pinned_catalog_url"
+      RESOLVED_ISSUE_CANON_URL="$catalog_url"
+      RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
+      ISSUE_CANON_INSTALL_FROM_CATALOG=1
+    else
+      RESOLVED_ISSUE_CANON_CATALOG_URL="$YAN_EXTENSION_CATALOG_URL"
     fi
     if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 0 ]]; then
       RESOLVED_ISSUE_CANON_URL="https://github.com/yshishenya/spec-kit-ext-github-issue-canon/archive/$RESOLVED_ISSUE_CANON_REF.zip"
@@ -770,7 +850,7 @@ ensure_ponytail_codex_plugin() {
 
   if ! command -v codex >/dev/null 2>&1; then
     PONYTAIL_PLUGIN_STATUS="failed"
-    echo "speckit-bootstrap: codex CLI is required unless --skip-ponytail is used" >&2
+    echo "speckit-bootstrap: codex CLI is required with --with-ponytail" >&2
     return 1
   fi
 
@@ -1051,6 +1131,24 @@ print(data.get("workflows", {}).get("speckit", {}).get("version", ""))
 PY
 }
 
+workflow_source() {
+  local registry="$PROJECT_DIR/.specify/workflows/workflow-registry.json"
+  [[ -f "$registry" ]] || return 0
+  python3 - "$registry" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(data.get("workflows", {}).get("speckit", {}).get("source", ""))
+PY
+}
+
+resolved_workflow_url() {
+  printf 'https://raw.githubusercontent.com/github/spec-kit/%s/workflows/speckit/workflow.yml\n' \
+    "$RESOLVED_SPEC_KIT_REF"
+}
+
 sha256_path() {
   python3 - "$1" <<'PY'
 import hashlib
@@ -1126,38 +1224,40 @@ extension_tree_hash() {
   tree_sha256 "$path"
 }
 
-capture_managed_skills_state() {
-  local local_skills="$PROJECT_DIR/.agents/skills"
-  local global_skills="$HOME/.agents/skills"
-  local d name local_hash global_hash
+capture_project_skills_state() {
+  local skills="$PROJECT_DIR/.agents/skills"
+  local d name digest
   local -a entries=()
 
-  for d in "$local_skills"/speckit-*; do
-    [[ -d "$d" ]] || continue
+  if [[ -L "$skills" ]]; then
+    echo "speckit-bootstrap: project skills path must not be a symlink: $skills" >&2
+    return 1
+  fi
+  for d in "$skills"/speckit-*; do
+    [[ -e "$d" || -L "$d" ]] || continue
     name="$(basename "$d")"
     if [[ ! "$name" =~ ^speckit-[A-Za-z0-9._+-]+$ ]]; then
       echo "speckit-bootstrap: unsafe generated skill name: $name" >&2
       return 1
     fi
-    if [[ ! -d "$global_skills/$name" ]]; then
-      echo "speckit-bootstrap: synced global skill is missing: $name" >&2
+    if [[ -L "$d" || ! -d "$d" ]]; then
+      echo "speckit-bootstrap: generated skill must be a real directory: $name" >&2
       return 1
     fi
-    local_hash="$(tree_sha256 "$d")"
-    global_hash="$(tree_sha256 "$global_skills/$name")"
-    if [[ "$local_hash" != "$global_hash" ]]; then
-      echo "speckit-bootstrap: synced global skill differs from generated source: $name" >&2
+    if [[ ! -f "$d/SKILL.md" ]]; then
+      echo "speckit-bootstrap: generated skill is missing SKILL.md: $name" >&2
       return 1
     fi
-    entries+=("$name=$local_hash")
+    digest="$(tree_sha256 "$d")"
+    entries+=("$name=$digest")
   done
 
   if [[ "${#entries[@]}" -eq 0 ]]; then
-    echo "speckit-bootstrap: no managed global skills were captured" >&2
+    echo "speckit-bootstrap: no project-local Spec Kit skills were captured" >&2
     return 1
   fi
 
-  RESOLVED_GLOBAL_SKILLS_MANIFEST="$(python3 - "${entries[@]}" <<'PY'
+  RESOLVED_PROJECT_SKILLS_MANIFEST="$(python3 - "${entries[@]}" <<'PY'
 import json
 import sys
 
@@ -1172,25 +1272,30 @@ PY
 )"
 }
 
-verify_global_skills() {
-  local manifest="$RESOLVED_GLOBAL_SKILLS_MANIFEST"
-  local global_skills="$HOME/.agents/skills"
+verify_project_skills() {
+  local manifest="$RESOLVED_PROJECT_SKILLS_MANIFEST"
+  local skills="$PROJECT_DIR/.agents/skills"
   local entries
   local name expected actual
   local errors=0
 
-  if ! entries="$(python3 - "$manifest" <<'PY'
+  if ! entries="$(python3 - "$manifest" "$skills" <<'PY'
 import json
 import re
 import sys
+from pathlib import Path
 
 try:
     manifest = json.loads(sys.argv[1])
 except json.JSONDecodeError as error:
-    print(f"speckit-bootstrap: invalid global skills manifest: {error}", file=sys.stderr)
+    print(f"speckit-bootstrap: invalid project skills manifest: {error}", file=sys.stderr)
     raise SystemExit(1)
 if not isinstance(manifest, dict) or not manifest:
-    print("speckit-bootstrap: global skills manifest must be a non-empty object", file=sys.stderr)
+    print("speckit-bootstrap: project skills manifest must be a non-empty object", file=sys.stderr)
+    raise SystemExit(1)
+root = Path(sys.argv[2])
+if root.is_symlink() or not root.is_dir():
+    print("speckit-bootstrap: project skills path must be a real directory", file=sys.stderr)
     raise SystemExit(1)
 for name, digest in sorted(manifest.items()):
     if not re.fullmatch(r"speckit-[A-Za-z0-9._+-]+", name):
@@ -1199,6 +1304,22 @@ for name, digest in sorted(manifest.items()):
     if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
         print(f"speckit-bootstrap: invalid managed skill digest: {name}", file=sys.stderr)
         raise SystemExit(1)
+actual = sorted(path.name for path in root.iterdir() if path.name.startswith("speckit-"))
+expected = sorted(manifest)
+if actual != expected:
+    missing = sorted(set(expected) - set(actual))
+    unexpected = sorted(set(actual) - set(expected))
+    if missing:
+        print(f"speckit-bootstrap: doctor missing project skills: {', '.join(missing)}", file=sys.stderr)
+    if unexpected:
+        print(f"speckit-bootstrap: doctor found unrecorded project skills: {', '.join(unexpected)}", file=sys.stderr)
+    raise SystemExit(1)
+for name in expected:
+    path = root / name
+    if path.is_symlink() or not path.is_dir():
+        print(f"speckit-bootstrap: project skill must be a real directory: {name}", file=sys.stderr)
+        raise SystemExit(1)
+for name, digest in sorted(manifest.items()):
     print(f"{name}\t{digest}")
 PY
 )"; then
@@ -1207,19 +1328,38 @@ PY
 
   while IFS=$'\t' read -r name expected; do
     [[ -n "$name" ]] || continue
-    if [[ ! -d "$global_skills/$name" ]]; then
-      echo "speckit-bootstrap: doctor missing managed global skill: $name" >&2
+    if [[ ! -d "$skills/$name" ]]; then
+      echo "speckit-bootstrap: doctor missing project skill: $name" >&2
       errors=$((errors + 1))
       continue
     fi
-    actual="$(tree_sha256 "$global_skills/$name")"
+    actual="$(tree_sha256 "$skills/$name")"
     if [[ "$actual" != "$expected" ]]; then
-      echo "speckit-bootstrap: doctor found managed global skill drift: $name" >&2
+      echo "speckit-bootstrap: doctor found project skill drift: $name" >&2
       errors=$((errors + 1))
     fi
   done <<< "$entries"
 
   [[ "$errors" -eq 0 ]]
+}
+
+migrate_legacy_global_skills() {
+  local lock
+  lock="$(lock_file)"
+  [[ -f "$lock" ]] || return 0
+  [[ "$(read_lock_value "$lock" schema_version 2>/dev/null || true)" == "2" ]] || return 0
+
+  local global_skills="$HOME/.agents/skills"
+  local path found=0
+  for path in "$global_skills"/speckit-*; do
+    [[ -e "$path" || -L "$path" ]] || continue
+    found=1
+    break
+  done
+  [[ "$found" -eq 1 ]] || return 0
+
+  echo "speckit-bootstrap: preserved legacy user-level skills at $global_skills/speckit-*" >&2
+  echo "speckit-bootstrap: review and remove duplicates manually after schema v3 migration" >&2
 }
 
 capture_project_dependency_state() {
@@ -1240,6 +1380,7 @@ capture_project_dependency_state() {
   RESOLVED_ISSUE_CANON_TREE_SHA256="$(extension_tree_hash github-issue-canon)"
   RESOLVED_WORKFLOW_VERSION="$(workflow_version)"
   RESOLVED_WORKFLOW_SHA256="$(sha256_path "$workflow")"
+  RESOLVED_WORKFLOW_SOURCE="$(workflow_source)"
 
   if [[ -z "$RESOLVED_AGENT_CONTEXT_VERSION" || -z "$RESOLVED_AGENT_CONTEXT_MANIFEST_HASH" ||
         -z "$RESOLVED_AGENT_CONTEXT_TREE_SHA256" ||
@@ -1248,7 +1389,7 @@ capture_project_dependency_state() {
         -z "$RESOLVED_ISSUE_CANON_INSTALLED_VERSION" || -z "$RESOLVED_ISSUE_CANON_MANIFEST_HASH" ||
         -z "$RESOLVED_ISSUE_CANON_TREE_SHA256" ||
         -z "$RESOLVED_WORKFLOW_VERSION" ||
-        -z "$RESOLVED_WORKFLOW_SHA256" ]]; then
+        -z "$RESOLVED_WORKFLOW_SHA256" || -z "$RESOLVED_WORKFLOW_SOURCE" ]]; then
     echo "speckit-bootstrap: could not capture complete extension/workflow lock state" >&2
     return 1
   fi
@@ -1285,16 +1426,20 @@ verify_locked_workflow() {
   local workflow="$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
   local actual_version
   local actual_sha256
+  local actual_source
   if [[ ! -f "$workflow" ]]; then
     echo "speckit-bootstrap: frozen speckit workflow file is missing" >&2
     return 1
   fi
   actual_version="$(workflow_version)"
   actual_sha256="$(sha256_path "$workflow")"
-  if [[ "$actual_version" != "$RESOLVED_WORKFLOW_VERSION" || "$actual_sha256" != "$RESOLVED_WORKFLOW_SHA256" ]]; then
+  actual_source="$(workflow_source)"
+  if [[ "$actual_version" != "$RESOLVED_WORKFLOW_VERSION" ||
+        "$actual_sha256" != "$RESOLVED_WORKFLOW_SHA256" ||
+        "$actual_source" != "$RESOLVED_WORKFLOW_SOURCE" ]]; then
     echo "speckit-bootstrap: frozen speckit workflow does not match the lock" >&2
-    echo "  expected: version=$RESOLVED_WORKFLOW_VERSION sha256=$RESOLVED_WORKFLOW_SHA256" >&2
-    echo "  actual:   version=$actual_version sha256=$actual_sha256" >&2
+    echo "  expected: version=$RESOLVED_WORKFLOW_VERSION sha256=$RESOLVED_WORKFLOW_SHA256 source=$RESOLVED_WORKFLOW_SOURCE" >&2
+    echo "  actual:   version=$actual_version sha256=$actual_sha256 source=$actual_source" >&2
     return 1
   fi
 }
@@ -1786,118 +1931,6 @@ run_agent_context_update() {
   fi
 }
 
-acquire_global_lock() {
-  local agents_root="$HOME/.agents"
-  local owner=""
-  mkdir -p "$agents_root"
-  GLOBAL_LOCK_DIR="$agents_root/.speckit-bootstrap.lock"
-  if ! mkdir "$GLOBAL_LOCK_DIR" 2>/dev/null; then
-    if [[ -f "$GLOBAL_LOCK_DIR/pid" ]]; then
-      owner="$(sed -n '1p' "$GLOBAL_LOCK_DIR/pid")"
-    fi
-    if [[ "$owner" =~ ^[0-9]+$ ]] && ! kill -0 "$owner" 2>/dev/null; then
-      rm -f "$GLOBAL_LOCK_DIR/pid"
-      if rmdir "$GLOBAL_LOCK_DIR" 2>/dev/null && mkdir "$GLOBAL_LOCK_DIR" 2>/dev/null; then
-        echo "speckit-bootstrap: recovered a stale global skills lock from PID $owner"
-      else
-        echo "speckit-bootstrap: could not recover stale global skills lock: $GLOBAL_LOCK_DIR" >&2
-        return 1
-      fi
-    else
-      echo "speckit-bootstrap: another bootstrap is updating global skills: $GLOBAL_LOCK_DIR" >&2
-      return 1
-    fi
-  fi
-  printf '%s\n' "$$" > "$GLOBAL_LOCK_DIR/pid"
-}
-
-release_global_lock() {
-  [[ -n "$GLOBAL_LOCK_DIR" ]] || return 0
-  rm -f "$GLOBAL_LOCK_DIR/pid"
-  rmdir "$GLOBAL_LOCK_DIR" 2>/dev/null || true
-  GLOBAL_LOCK_DIR=""
-}
-
-terminate_with_status() {
-  local status="$1"
-  release_global_lock
-  trap - EXIT INT TERM
-  exit "$status"
-}
-
-install_global_lock_traps() {
-  trap release_global_lock EXIT
-  trap 'terminate_with_status 130' INT
-  trap 'terminate_with_status 143' TERM
-}
-
-clear_global_lock_traps() {
-  trap - EXIT INT TERM
-}
-
-sync_global_skills() {
-  local local_skills="$PROJECT_DIR/.agents/skills"
-  local agents_root="$HOME/.agents"
-  local global_skills="$agents_root/skills"
-  local stage
-  local backup="$agents_root/.skills.backup.$$"
-
-  if ! compgen -G "$local_skills/speckit-*" >/dev/null; then
-    echo "speckit-bootstrap: no local speckit skills generated in $local_skills" >&2
-    return 1
-  fi
-
-  mkdir -p "$agents_root"
-  stage="$(mktemp -d "$agents_root/.skills.stage.XXXXXX")"
-  if [[ -d "$global_skills" ]]; then
-    cp -R "$global_skills/." "$stage/"
-  fi
-
-  local d name
-  for d in "$local_skills"/speckit-*; do
-    [[ -d "$d" ]] || continue
-    name="$(basename "$d")"
-    if [[ ! -f "$d/SKILL.md" ]]; then
-      rm -rf "$stage"
-      echo "speckit-bootstrap: generated skill is missing SKILL.md: $d" >&2
-      return 1
-    fi
-    rm -rf "${stage:?}/$name"
-    cp -R "$d" "$stage/$name"
-  done
-
-  if ! compgen -G "$stage/speckit-*/SKILL.md" >/dev/null; then
-    rm -rf "$stage"
-    echo "speckit-bootstrap: staged global skill set failed validation" >&2
-    return 1
-  fi
-
-  if [[ -d "$global_skills" ]]; then
-    mv "$global_skills" "$backup"
-  fi
-  if ! mv "$stage" "$global_skills"; then
-    [[ ! -d "$backup" ]] || mv "$backup" "$global_skills"
-    rm -rf "$stage"
-    echo "speckit-bootstrap: atomic global skill update failed; restored the previous set" >&2
-    return 1
-  fi
-  rm -rf "$backup"
-
-  echo "speckit-bootstrap: atomically synced global skills to $global_skills"
-}
-
-clean_local_skill_duplicates() {
-  [[ "$KEEP_LOCAL_SKILLS" -eq 0 ]] || return 0
-
-  local local_skills="$PROJECT_DIR/.agents/skills"
-  [[ -d "$local_skills" ]] || return 0
-
-  rm -rf "$local_skills"/speckit-*
-  rmdir "$local_skills" 2>/dev/null || true
-  rmdir "$PROJECT_DIR/.agents" 2>/dev/null || true
-  echo "speckit-bootstrap: removed project-local speckit skill duplicates"
-}
-
 clean_caches() {
   rm -rf \
     "$PROJECT_DIR/.specify/extensions/.cache" \
@@ -1967,20 +2000,17 @@ ensure_codex_integration() {
 
   if printf '%s\n' "$status_output" | grep -Fq "No integration currently installed"; then
     echo "speckit-bootstrap: installing Codex integration in $PROJECT_DIR"
-    specify integration install codex --integration-options="--skills" --force
+    specify integration install codex --integration-options="--skills"
     return
   fi
 
   if printf '%s\n' "$status_output" | grep -Fq "Integration 'codex' is not installed"; then
     echo "speckit-bootstrap: installing Codex integration in $PROJECT_DIR"
-    specify integration install codex --integration-options="--skills" --force
+    specify integration install codex --integration-options="--skills"
     return
   fi
 
-  if ! specify integration upgrade codex --integration-options="--skills" --force; then
-    echo "speckit-bootstrap: Codex integration upgrade failed; trying install"
-    specify integration install codex --integration-options="--skills" --force
-  fi
+  specify integration upgrade codex --integration-options="--skills"
 }
 
 init_spec_kit_project() {
@@ -1994,16 +2024,32 @@ init_spec_kit_project() {
 }
 
 refresh_speckit_workflow() {
+  local workflow="$PROJECT_DIR/.specify/workflows/speckit/workflow.yml"
+  local expected_source
+  local current_source
+  local locked_sha256=""
+  local actual_sha256=""
   local output
-  if ! output="$(printf 'y\n' | specify workflow update speckit 2>&1)"; then
+
+  expected_source="$(resolved_workflow_url)"
+  current_source="$(workflow_source)"
+  if [[ -f "$workflow" && -f "$(lock_file)" && "$current_source" == "$expected_source" ]]; then
+    locked_sha256="$(read_lock_value "$(lock_file)" workflow.sha256 2>/dev/null || true)"
+    actual_sha256="$(sha256_path "$workflow")"
+    if [[ -n "$locked_sha256" && "$actual_sha256" == "$locked_sha256" ]]; then
+      echo "speckit-bootstrap: speckit workflow already matches immutable source $RESOLVED_SPEC_KIT_REF"
+      return 0
+    fi
+  fi
+
+  if ! output="$(printf 'y\n' | specify workflow add speckit --from "$expected_source" 2>&1)"; then
     printf '%s\n' "$output" >&2
     return 1
   fi
   printf '%s\n' "$output"
-
-  if printf '%s\n' "$output" | grep -Fq "No workflows were eligible for update"; then
-    echo "speckit-bootstrap: workflow is not catalog-managed; reinstalling it from the catalog"
-    specify workflow add speckit
+  if [[ "$(workflow_source)" != "$expected_source" ]]; then
+    echo "speckit-bootstrap: workflow registry did not record the immutable source" >&2
+    return 1
   fi
 }
 
@@ -2046,11 +2092,12 @@ write_lock_file() {
     "$RESOLVED_GIT_EXTENSION_TREE_SHA256" \
     "$RESOLVED_WORKFLOW_VERSION" \
     "$RESOLVED_WORKFLOW_SHA256" \
+    "$RESOLVED_WORKFLOW_SOURCE" \
     "$ponytail_enabled" \
     "$ponytail_version" \
     "$ponytail_ref" \
     "$ponytail_marketplace_sha256" \
-    "$RESOLVED_GLOBAL_SKILLS_MANIFEST" <<'PY'
+    "$RESOLVED_PROJECT_SKILLS_MANIFEST" <<'PY'
 import json
 import os
 import sys
@@ -2059,7 +2106,7 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 data = {
-    "schema_version": 2,
+    "schema_version": 3,
     "bootstrap_version": sys.argv[2],
     "spec_kit": {
         "version": sys.argv[3],
@@ -2091,14 +2138,15 @@ data = {
         "id": "speckit",
         "version": sys.argv[18],
         "sha256": sys.argv[19],
+        "source_url": sys.argv[20],
     },
     "ponytail": {
-        "enabled": sys.argv[20] == "true",
-        "version": sys.argv[21],
-        "ref": sys.argv[22],
-        "marketplace_sha256": sys.argv[23],
+        "enabled": sys.argv[21] == "true",
+        "version": sys.argv[22],
+        "ref": sys.argv[23],
+        "marketplace_sha256": sys.argv[24],
     },
-    "global_skills": json.loads(sys.argv[24]),
+    "project_skills": json.loads(sys.argv[25]),
 }
 content = json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -2167,7 +2215,7 @@ PY
     echo "  github-issue-canon archive sha256: $RESOLVED_ISSUE_CANON_ARCHIVE_SHA256"
   echo "  Ponytail: $ponytail"
   [[ "$SKIP_PONYTAIL" -eq 1 ]] || echo "  Ponytail ref: $RESOLVED_PONYTAIL_REF"
-  echo "  mutations: project .specify/AGENTS.md/.github, user catalogs/plugins/global skills"
+  echo "  mutations: project .specify/.agents/AGENTS.md/.github, user extension catalog, optional Ponytail plugin"
 }
 
 verify_bootstrap() {
@@ -2176,6 +2224,7 @@ verify_bootstrap() {
   local installed
   local installed_ref
   local actual_hash
+  local actual_source
   local actual_tree_hash
   local marketplace_info
   local marketplace_type
@@ -2210,8 +2259,8 @@ verify_bootstrap() {
     echo "speckit-bootstrap: doctor missing release/versioning instructions" >&2
     errors=$((errors + 1))
   fi
-  if ! verify_global_skills; then
-    echo "speckit-bootstrap: doctor found managed global skill integrity problems" >&2
+  if ! verify_project_skills; then
+    echo "speckit-bootstrap: doctor found project skill integrity problems" >&2
     errors=$((errors + 1))
   fi
 
@@ -2270,7 +2319,10 @@ verify_bootstrap() {
   if [[ -n "$RESOLVED_WORKFLOW_VERSION" && -f "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml" ]]; then
     installed="$(workflow_version)"
     actual_hash="$(sha256_path "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml")"
-    if [[ "$installed" != "$RESOLVED_WORKFLOW_VERSION" || "$actual_hash" != "$RESOLVED_WORKFLOW_SHA256" ]]; then
+    actual_source="$(workflow_source)"
+    if [[ "$installed" != "$RESOLVED_WORKFLOW_VERSION" ||
+          "$actual_hash" != "$RESOLVED_WORKFLOW_SHA256" ||
+          "$actual_source" != "$RESOLVED_WORKFLOW_SOURCE" ]]; then
       echo "speckit-bootstrap: doctor found speckit workflow state that differs from the lock" >&2
       errors=$((errors + 1))
     fi
@@ -2385,8 +2437,7 @@ PY
   [[ -z "$RESOLVED_SPEC_KIT_REF" ]] || echo "  Spec Kit ref: $RESOLVED_SPEC_KIT_REF"
   [[ -z "$RESOLVED_ISSUE_CANON_VERSION" ]] || echo "  github-issue-canon: $RESOLVED_ISSUE_CANON_VERSION"
   [[ -z "$RESOLVED_ISSUE_CANON_REF" ]] || echo "  github-issue-canon ref: $RESOLVED_ISSUE_CANON_REF"
-  echo "  global skills: $HOME/.agents/skills/speckit-*"
-  echo "  local skills: $([[ "$KEEP_LOCAL_SKILLS" -eq 1 ]] && echo kept || echo removed)"
+  echo "  project skills: $PROJECT_DIR/.agents/skills/speckit-*"
   echo "  ponytail: $ponytail"
   [[ -z "$RESOLVED_PONYTAIL_REF" ]] || echo "  ponytail ref: $RESOLVED_PONYTAIL_REF"
   echo "  ponytail upstream AGENTS.md: $PONYTAIL_UPSTREAM_AGENTS_STATUS"
@@ -2417,12 +2468,13 @@ main() {
 
   require_cmd git
   require_cmd python3
+  require_safe_managed_paths
 
   if [[ "$MODE" == "doctor" ]]; then
     cd "$PROJECT_DIR"
     if [[ -f "$(lock_file)" ]]; then
-      if [[ "$(read_lock_value "$(lock_file)" schema_version)" != "2" ]]; then
-        echo "speckit-bootstrap: unsupported lock schema in $(lock_file)" >&2
+      if [[ "$(read_lock_value "$(lock_file)" schema_version)" != "3" ]]; then
+        echo "speckit-bootstrap: unsupported lock schema in $(lock_file); run once without --frozen to migrate" >&2
         return 1
       fi
       RESOLVED_SPEC_KIT_VERSION="$(read_lock_value "$(lock_file)" spec_kit.version)"
@@ -2441,7 +2493,8 @@ main() {
       RESOLVED_GIT_EXTENSION_TREE_SHA256="$(read_lock_value "$(lock_file)" extensions.git.tree_sha256)"
       RESOLVED_WORKFLOW_VERSION="$(read_lock_value "$(lock_file)" workflow.version)"
       RESOLVED_WORKFLOW_SHA256="$(read_lock_value "$(lock_file)" workflow.sha256)"
-      RESOLVED_GLOBAL_SKILLS_MANIFEST="$(read_lock_json "$(lock_file)" global_skills)"
+      RESOLVED_WORKFLOW_SOURCE="$(read_lock_value "$(lock_file)" workflow.source_url)"
+      RESOLVED_PROJECT_SKILLS_MANIFEST="$(read_lock_json "$(lock_file)" project_skills)"
       require_commit_sha "$RESOLVED_SPEC_KIT_REF" "Spec Kit"
       if [[ "$RESOLVED_ISSUE_CANON_REF" != "custom" ]]; then
         require_commit_sha "$RESOLVED_ISSUE_CANON_REF" github-issue-canon
@@ -2485,12 +2538,13 @@ main() {
     init_spec_kit_project
   else
     echo "speckit-bootstrap: updating Spec Kit in $PROJECT_DIR"
+  fi
+
+  if [[ "$FROZEN" -eq 1 ]]; then
     ensure_codex_integration
-    if [[ "$FROZEN" -eq 1 ]]; then
-      echo "speckit-bootstrap: frozen mode preserved the locked workflow and extensions"
-    else
-      refresh_speckit_workflow
-    fi
+    echo "speckit-bootstrap: frozen mode preserved the locked workflow and extensions"
+  else
+    refresh_speckit_workflow
   fi
 
   if [[ "$FROZEN" -eq 1 ]]; then
@@ -2530,6 +2584,9 @@ main() {
         "$RESOLVED_ISSUE_CANON_VERSION" \
         ".agents/skills/speckit-github-issue-canon-ensure/SKILL.md"
     fi
+    # Extensions contribute Codex skills. Regenerate once after the full set is
+    # installed so a fresh project already matches its subsequent update state.
+    ensure_codex_integration
   fi
 
   ensure_agent_context_config
@@ -2544,18 +2601,9 @@ main() {
 
   if [[ "$FROZEN" -eq 0 ]]; then
     capture_project_dependency_state
+    capture_project_skills_state
+    migrate_legacy_global_skills
   fi
-
-  acquire_global_lock
-  install_global_lock_traps
-  sync_global_skills
-  if [[ "$FROZEN" -eq 0 ]]; then
-    capture_managed_skills_state
-  fi
-  release_global_lock
-  clear_global_lock_traps
-
-  clean_local_skill_duplicates
   clean_caches
   write_lock_file
   hide_install_metadata_diffs

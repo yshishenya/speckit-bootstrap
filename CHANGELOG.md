@@ -6,6 +6,53 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.8.0] - 2026-08-04
+
+### Added
+
+- Record and verify every project-local Spec Kit skill in lock schema v3.
+- Record the immutable commit-addressed source URL for the installed `speckit`
+  workflow and reject source drift in `--doctor` and `--frozen` modes.
+- Add `--with-ponytail` as the explicit opt-in for user-level Ponytail setup.
+
+### Changed
+
+- Keep generated Codex skills in the repository's `.agents/skills` scope,
+  matching Codex's repository-skill model and preventing one project from
+  changing the skills used by another project.
+- During schema v2 migration, preserve all user-level skills and warn about
+  manual duplicate cleanup; project lock files never authorize home-directory
+  deletion.
+- Make Ponytail installation opt-in; project bootstrap no longer changes the
+  user's plugin environment unless explicitly requested.
+- Update the pinned compatibility baseline to Spec Kit v0.15.2 and GitHub
+  Actions to `actions/checkout` v7.0.1 and `setup-uv` v9.0.0.
+- Keep Dependabot patch/minor updates grouped while isolating future major
+  upgrades for independent review.
+
+### Fixed
+
+- Converge a fresh install in one run by refreshing the workflow on both init
+  and update paths and regenerating the Codex integration only after all
+  extensions are installed.
+- Preserve locally modified integration files by using Spec Kit's diff-aware
+  upgrade guard instead of forcing or silently reinstalling the integration.
+- Install the official workflow from the immutable Spec Kit release commit
+  instead of the catalog's mutable `main` payload URL.
+- Resolve explicitly pinned issue-canon versions directly from their tagged
+  catalog and retry bounded transient catalog failures, removing stable CI's
+  dependency on the mutable `main` catalog.
+- Extend live smoke coverage to a fresh run plus two normal repeats, project
+  skill tampering, immutable workflow provenance, frozen replay, and audit mode.
+
+### Security
+
+- Replace yanked `zizmor` 1.27.0 (`GHSA-f42p-wjw5-97qh`) with 1.29.0 in local
+  and hosted workflow audits.
+- Reject symlinked managed project paths and unrecorded `speckit-*` skills.
+- Verify the immutable GitHub Release and both published asset attestations.
+- Pin the documented first-stage installer URL to the immutable release tag.
+
 ## [0.7.1] - 2026-07-20
 
 ### Added

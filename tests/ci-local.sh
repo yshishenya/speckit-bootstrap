@@ -24,6 +24,6 @@ bash -n "${scripts[@]}"
 shellcheck "${scripts[@]}"
 bash tests/unit.sh
 actionlint
-uvx --from zizmor==1.27.0 zizmor --pedantic .
+uvx --from zizmor==1.29.0 zizmor --pedantic .
 
 echo "ci-local: quick quality gate passed"
