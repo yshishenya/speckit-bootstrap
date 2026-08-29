@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.8.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.8.1" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -443,7 +443,7 @@ sha = "a" * 40
 digest = "b" * 64
 data = {
     "schema_version": 3,
-    "bootstrap_version": "0.8.0",
+    "bootstrap_version": "0.8.1",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",

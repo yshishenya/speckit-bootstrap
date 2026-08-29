@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.8.0"
+BOOTSTRAP_VERSION="0.8.1"
 
 usage() {
   cat <<'EOF'

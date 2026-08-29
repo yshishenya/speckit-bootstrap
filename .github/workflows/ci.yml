@@ -76,7 +76,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           SPEC_KIT_VERSION: v0.15.2
-          SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.3.1
+          SPECKIT_GITHUB_ISSUE_CANON_VERSION: v0.3.2
         run: bash tests/smoke-live.sh
 
   workflow-security:

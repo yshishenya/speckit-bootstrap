@@ -6,6 +6,16 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.8.1] - 2026-08-30
+
+### Fixed
+
+- Add a live regression gate that imports the installed Python-backed
+  issue-canon command and then re-runs `--doctor`, preventing runtime bytecode
+  from silently invalidating a healthy extension lock.
+- Validate the bootstrap compatibility lane against `github-issue-canon`
+  v0.3.2, whose commands no longer write bytecode into the locked payload.
+
 ## [0.8.0] - 2026-08-04
 
 ### Added
