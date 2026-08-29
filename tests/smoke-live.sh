@@ -51,6 +51,14 @@ export PATH
 
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+# Import an installed Python-backed command exactly as the generated command
+# runner does. Runtime bytecode must not alter the locked extension tree.
+(
+  cd "$PROJECT/.specify/extensions/github-issue-canon/scripts"
+  python3 -c 'import runpy; runpy.run_path("validate_issue_canon.py")'
+)
+"$BOOTSTRAP" "$PROJECT" --doctor
+
 doctor_json="$("$BOOTSTRAP" "$PROJECT" --doctor --json)"
 python3 - "$doctor_json" <<'PY'
 import json
@@ -158,4 +166,4 @@ if git -C "$PROJECT" ls-files -v .specify | grep -q '^S '; then
 fi
 
 SPECKIT_TRACK_INSTALL_METADATA=1 "$BOOTSTRAP" "$PROJECT" --doctor
-echo 'smoke-live: fresh install, two stable repeats, immutable workflow, integrity probes, JSON doctor, frozen rerun, and audit mode passed'
+echo 'smoke-live: fresh install, command import, two stable repeats, immutable workflow, integrity probes, JSON doctor, frozen rerun, and audit mode passed'
