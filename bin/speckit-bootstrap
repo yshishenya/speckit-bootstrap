@@ -2406,49 +2406,71 @@ replace(
     "            return 1",
 )
 
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+auto_commit_conventional_guard = (
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message\n"
+)
+auto_commit_pre_guard = (
     "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
     "    if not enabled:\n"
     "        return 0\n"
-    "    commit_style = _read_commit_style(config_file)\n"
-    "    if commit_style == \"conventional\":\n"
-    "        if not generated_message:\n"
-    "            print(\n"
-    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
-    "                \"commit message was supplied; pass --message-file <path>\",\n"
-    "                file=sys.stderr,\n"
-    "            )\n"
-    "            return 1\n"
-    "        commit_msg = generated_message\n\n"
-    "    # Check if there are changes to commit",
+    + auto_commit_conventional_guard
+    + "\n    # Check if there are changes to commit"
+)
+auto_commit_clean_preamble = (
     "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
     "    if not enabled:\n"
     "        return 0\n\n"
-    "    # Check if there are changes to commit",
+    "    # Check if there are changes to commit"
 )
-
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_no_changes = (
     "    if _quiet(\"diff\", \"--quiet\", \"HEAD\") and _quiet(\"diff\", \"--cached\", \"--quiet\") and not untracked:\n"
     "        print(f\"[specify] No changes to commit after {event_name}\", file=sys.stderr)\n"
     "        return 0\n\n"
-    "    # Derive a human-readable command name from the event",
-    "    if _quiet(\"diff\", \"--quiet\", \"HEAD\") and _quiet(\"diff\", \"--cached\", \"--quiet\") and not untracked:\n"
-    "        print(f\"[specify] No changes to commit after {event_name}\", file=sys.stderr)\n"
-    "        return 0\n\n"
-    "    commit_style = _read_commit_style(config_file)\n"
-    "    if commit_style == \"conventional\":\n"
-    "        if not generated_message:\n"
-    "            print(\n"
-    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
-    "                \"commit message was supplied; pass --message-file <path>\",\n"
-    "                file=sys.stderr,\n"
-    "            )\n"
-    "            return 1\n"
-    "        commit_msg = generated_message\n\n"
-    "    # Derive a human-readable command name from the event",
 )
+auto_commit_post_guard = (
+    auto_commit_no_changes
+    + auto_commit_conventional_guard
+    + "\n    # Derive a human-readable command name from the event"
+)
+auto_commit_clean_tail = (
+    auto_commit_no_changes + "    # Derive a human-readable command name from the event"
+)
+auto_commit_guard_state = (
+    auto_commit_text.count(auto_commit_pre_guard),
+    auto_commit_text.count(auto_commit_clean_preamble),
+    auto_commit_text.count(auto_commit_post_guard),
+    auto_commit_text.count(auto_commit_clean_tail),
+)
+if auto_commit_guard_state == (0, 1, 0, 1):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_clean_tail, auto_commit_post_guard, 1
+    )
+elif auto_commit_guard_state == (1, 0, 0, 1):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_pre_guard, auto_commit_clean_preamble, 1
+    ).replace(auto_commit_clean_tail, auto_commit_post_guard, 1)
+elif auto_commit_guard_state == (1, 0, 1, 0):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_pre_guard, auto_commit_clean_preamble, 1
+    )
+elif auto_commit_guard_state != (0, 1, 1, 0):
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Python conventional guard form is unknown "
+        f"{auto_commit_guard_state}"
+    )
+pending[auto_commit_path] = auto_commit_text
 
 replace(
     ".specify/extensions/git/scripts/python/create_new_feature_branch.py",

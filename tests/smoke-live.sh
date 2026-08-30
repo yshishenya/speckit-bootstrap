@@ -210,6 +210,48 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 text = path.read_text(encoding="utf-8")
+guard = (
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message\n"
+)
+mixed = (
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n"
+    + guard
+    + "\n    # Check if there are changes to commit"
+)
+path.write_text(text + "\n" + mixed + "\n", encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: mixed Python conventional-guard forms were accepted' >&2
+  exit 1
+fi
+mv "$SANDBOX/auto_commit.py.backup" \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+
+cp "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" \
+  "$SANDBOX/auto_commit.py.backup"
+python3 - "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
 known = (
     '            generated_message = message_file.read_text(encoding="utf-8").strip()\n'
     "            # Caller owns and cleans up the transport file; never delete it here."
