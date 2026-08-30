@@ -629,8 +629,13 @@ grep -Fq 'Verify the analyze gate before external issue sync' \
   "$HARDENING_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'do not guess or discard material decisions' \
   "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md"
-grep -Fq 'unresolved markers mean the spec is ready for' \
-  "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md"
+python3 - "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+assert "ready for `$speckit-clarify`, not planning" in text
+PY
 
 printf 'branch_template: features/{number}-{slgu}\n' > \
   "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
@@ -644,6 +649,18 @@ if (
   exit 1
 fi
 grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+DOLLAR='$'
+printf 'branch_template: %s\n' "${DOLLAR}{author}/{number}-{slug}" > \
+  "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
+if (
+  cd "$HARDENING_PROBE"
+  bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+) >"$BRANCH_ERROR" 2>&1; then
+  echo 'smoke-live: shell-style branch-template placeholder was accepted' >&2
+  exit 1
+fi
+grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
 python3 - \
   "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" \
   "$HARDENING_PROBE/.specify/templates/checklist-template.md" <<'PY'

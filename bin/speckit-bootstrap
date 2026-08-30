@@ -1850,9 +1850,15 @@ def replace_variants(relative: str, *states: str) -> None:
     path = required(relative)
     text = pending.get(path, path.read_text(encoding="utf-8"))
     final = states[-1]
-    if final in text:
+    final_count = text.count(final)
+    residual = text.replace(final, "", 1) if final_count == 1 else text
+    matches = [(state, residual.count(state)) for state in states[:-1]]
+    if final_count == 1 and sum(count for _state, count in matches) == 0:
         return
-    matches = [(state, text.count(state)) for state in states[:-1]]
+    if final_count != 0:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream artifact changed; migration variant is unknown in {relative}"
+        )
     if sum(count for _state, count in matches) != 1:
         raise SystemExit(
             f"speckit-bootstrap: upstream artifact changed; migration variant is unknown in {relative}"
@@ -2908,6 +2914,12 @@ replace(
     "    case \"$template\" in",
     "    local feature_segment\n"
     "    local unsupported_tokens=\"$template\"\n"
+    "    case \"$template\" in\n"
+    "        *'${author}'*|*'${app}'*|*'${number}'*|*'${slug}'*)\n"
+    "            >&2 echo \"Error: branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
     "    unsupported_tokens=${unsupported_tokens//\\{author\\}/}\n"
     "    unsupported_tokens=${unsupported_tokens//\\{app\\}/}\n"
     "    unsupported_tokens=${unsupported_tokens//\\{number\\}/}\n"

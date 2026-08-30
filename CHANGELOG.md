@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
-## [0.9.8] - 2026-08-30
+## [0.9.8] - 2026-08-31
 
 ### Fixed
 

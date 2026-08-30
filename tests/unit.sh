@@ -871,6 +871,7 @@ for marker in (
     "do not guess or discard material decisions",
     "unresolved markers mean the spec is ready for",
     "branch_template contains an unsupported or malformed placeholder",
+    "branch_template contains a shell-style placeholder",
 ):
     assert marker in text, marker
 PY
