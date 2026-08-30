@@ -6,6 +6,14 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.3] - 2026-08-30
+
+### Fixed
+
+- Migrate the known `v0.9.1` safe Git-initialization fallback to the `v0.9.2`
+  blocking form while continuing to fail closed for unknown partial upstream
+  states.
+
 ## [0.9.2] - 2026-08-30
 
 ### Changed

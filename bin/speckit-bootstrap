@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.2"
+BOOTSTRAP_VERSION="0.9.3"
 
 usage() {
   cat <<'EOF'
@@ -2415,13 +2415,38 @@ for relative in (
         "If Git is installed but `git init`, `git add .`, or `git commit` fails:",
         "If Git is installed but `git init` or `git commit` fails:",
     )
-    replace(
-        relative,
+    blocking_fallback = (
+        "If the extension scripts are not found, STOP with a blocking installation error. Do not run an inline "
+        "fallback: the managed scripts own the Git availability and existing-repository guards."
+    )
+    unsafe_fallback = (
         "If the extension scripts are not found, fall back to:\n"
         "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`",
-        "If the extension scripts are not found, STOP with a blocking installation error. Do not run an inline "
-        "fallback: the managed scripts own the Git availability and existing-repository guards.",
+        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`"
+    )
+    v091_fallback = (
+        "If the extension scripts are not found, fall back to:\n"
+        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`"
+    )
+    initialize_path = required(relative)
+    initialize_text = pending.get(
+        initialize_path, initialize_path.read_text(encoding="utf-8")
+    )
+    fallback_counts = {
+        fallback: initialize_text.count(fallback)
+        for fallback in (blocking_fallback, unsafe_fallback, v091_fallback)
+    }
+    if fallback_counts[blocking_fallback] == 1 and sum(fallback_counts.values()) == 1:
+        continue
+    if fallback_counts[blocking_fallback] == 0 and sum(fallback_counts.values()) == 1:
+        legacy_fallback = next(
+            fallback for fallback, count in fallback_counts.items() if count == 1
+        )
+        replace(relative, legacy_fallback, blocking_fallback)
+        continue
+    raise SystemExit(
+        f"speckit-bootstrap: upstream artifact changed; Git initialization fallback is unknown in {relative}"
     )
 
 replace(

@@ -51,6 +51,60 @@ export PATH
 
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+python3 - "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+blocking = (
+    "If the extension scripts are not found, STOP with a blocking installation error. "
+    "Do not run an inline fallback: the managed scripts own the Git availability and "
+    "existing-repository guards."
+)
+v091 = (
+    "If the extension scripts are not found, fall back to:\n"
+    '- **Bash**: `git init && git commit --allow-empty -m "Initial commit from Specify template"`\n'
+    '- **PowerShell**: `git init; git commit --allow-empty -m "Initial commit from Specify template"`'
+)
+text = path.read_text(encoding="utf-8")
+if blocking not in text:
+    raise SystemExit("smoke-live: blocking Git-init fallback fixture is missing")
+path.write_text(text.replace(blocking, v091, 1), encoding="utf-8")
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+)
+grep -Fq 'blocking installation error' "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
+cp "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md" "$SANDBOX/git-initialize-skill.backup"
+python3 - "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+unsafe = (
+    "\n\nIf the extension scripts are not found, fall back to:\n"
+    '- **Bash**: `git init && git add . && git commit -m "Initial commit from Specify template"`\n'
+    '- **PowerShell**: `git init; git add .; git commit -m "Initial commit from Specify template"`'
+)
+path.write_text(path.read_text(encoding="utf-8") + unsafe, encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: mixed Git-init fallback forms were accepted' >&2
+  exit 1
+fi
+mv "$SANDBOX/git-initialize-skill.backup" "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
+"$BOOTSTRAP" "$PROJECT" --doctor
+
 grep -Fq 'MUST NOT skip clarify' "$PROJECT/.agents/skills/speckit-clarify/SKILL.md"
 grep -Fq 'existing spec is updated in place' "$PROJECT/.agents/skills/speckit-specify/SKILL.md"
 grep -Fq 'project canon' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
