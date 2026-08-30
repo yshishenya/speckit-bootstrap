@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.0"
+BOOTSTRAP_VERSION="0.9.1"
 
 usage() {
   cat <<'EOF'
@@ -1934,6 +1934,15 @@ replace(
 )
 replace(
     ".agents/skills/speckit-converge/SKILL.md",
+    "- On `tasks_appended`: state how many tasks were appended under which phase, and recommend\n"
+    "  running `$speckit-implement` to complete them; note that a follow-up converge\n"
+    "  run will find fewer or no remaining items.",
+    "- On `tasks_appended`: state how many tasks were appended under which phase. If a GitHub remote exists, "
+    "run `$speckit-taskstoissues` first so every new executable task has external traceability; then run "
+    "`$speckit-implement` and follow with another converge pass.",
+)
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
     "- On `converged`: recommend proceeding to review / opening a PR. No further implement pass\n"
     "  is needed for this feature's specified scope.",
     "- On `converged`: require the feature quickstart and selected repository/release validation gates next. "
@@ -1962,10 +1971,13 @@ replace(
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
     r"For each issue title, match it against the task ID pattern .*?the skill is re-invoked\.",
-    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
-    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
-    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
-    "prevents duplicates without fetching the whole issue history once all task IDs are matched.",
+    "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
+    "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
+    "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
+    "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
+    "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
+    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
+    "or a reconciled closed owner, or when there are no more pages.",
 )
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
@@ -2166,6 +2178,54 @@ replace(
     "                    return 2\n"
     "                fi\n"
     "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+)
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "ranked = []\n"
+    "for ext_id, meta in registered.items():\n"
+    "    if isinstance(ext_id, str) and re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):\n"
+    "        ranked.append((priority(meta.get('priority')), ext_id))",
+    "ranked = []\n"
+    "for ext_id, meta in registered.items():\n"
+    "    if not isinstance(ext_id, str) or not re.fullmatch(r'[a-z0-9-]+', ext_id):\n"
+    "        print('registry_invalid: extension id must match [a-z0-9-]+', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    if not isinstance(meta, dict):\n"
+    "        print(f'registry_invalid: metadata for {ext_id} must be a mapping', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    enabled = meta.get('enabled', True)\n"
+    "    if not isinstance(enabled, bool):\n"
+    "        print(f'registry_invalid: enabled for {ext_id} must be boolean', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    if enabled:\n"
+    "        ranked.append((priority(meta.get('priority')), ext_id))",
+)
+
+replace(
+    ".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1",
+    "if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {\n"
+    "    # Call without parameters for compatibility with core common.ps1 (no -RepoRoot param)\n"
+    "    # and git-common.ps1 (has -RepoRoot param with default).\n"
+    "    $hasGit = Test-HasGit\n"
+    "} else {",
+    "if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {\n"
+    "    Push-Location $repoRoot\n"
+    "    try {\n"
+    "        $hasGit = Test-HasGit\n"
+    "    } finally {\n"
+    "        Pop-Location\n"
+    "    }\n"
+    "} else {",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "SCRIPT_DIR = Path(__file__).resolve().parent\n",
+    "# Keep dynamically imported managed helpers out of the locked tree.\n"
+    "sys.dont_write_bytecode = True\n\n"
+    "SCRIPT_DIR = Path(__file__).resolve().parent\n",
+    count=1,
 )
 
 for path, content in pending.items():
