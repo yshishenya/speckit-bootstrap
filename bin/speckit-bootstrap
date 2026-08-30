@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.8.1"
+BOOTSTRAP_VERSION="0.9.0"
 
 usage() {
   cat <<'EOF'
@@ -1472,7 +1472,20 @@ ensure_extension_from_catalog() {
   local expected_skill="${3:-}"
   local output
   local installed_version
+  local lock
   local catalog_url="${RESOLVED_ISSUE_CANON_CATALOG_URL:-$YAN_EXTENSION_CATALOG_URL}"
+
+  installed_version="$(extension_version "$name")"
+  lock="$(lock_file)"
+  if extension_installed "$name" && \
+     [[ "$installed_version" == "$expected_version" ]] && \
+     { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; } && \
+     [[ -f "$lock" ]] && \
+     [[ "$(read_lock_value "$lock" github_issue_canon.ref 2>/dev/null || true)" == "$RESOLVED_ISSUE_CANON_REF" ]] && \
+     [[ "$(read_lock_value "$lock" github_issue_canon.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash "$name")" ]]; then
+    echo "speckit-bootstrap: $name already matches immutable source $RESOLVED_ISSUE_CANON_REF"
+    return 0
+  fi
 
   if ! output="$(SPECKIT_CATALOG_URL="$catalog_url" specify extension add "$name" --force 2>&1)"; then
     printf '%s\n' "$output" >&2
@@ -1780,6 +1793,366 @@ PY
   echo "speckit-bootstrap: ensured risk-lane guidance in Spec Kit templates"
 }
 
+ensure_governed_generated_artifacts() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "speckit-bootstrap: python3 not found; cannot harden generated Spec Kit artifacts" >&2
+    return 1
+  fi
+
+  python3 - "$PROJECT_DIR" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+
+
+def required(relative: str) -> Path:
+    path = root / relative
+    if not path.is_file():
+        raise SystemExit(f"speckit-bootstrap: generated artifact is missing: {relative}")
+    return path
+
+
+def replace(relative: str, old: str, new: str, *, count: int = 0) -> None:
+    path = required(relative)
+    text = path.read_text(encoding="utf-8")
+    if new in text:
+        return
+    if old not in text:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream artifact changed; hardening anchor is missing in {relative}"
+        )
+    updated = text.replace(old, new) if count == 0 else text.replace(old, new, count)
+    path.write_text(updated, encoding="utf-8")
+
+
+def replace_regex(relative: str, pattern: str, replacement: str) -> None:
+    path = required(relative)
+    text = path.read_text(encoding="utf-8")
+    updated, substitutions = re.subn(
+        pattern, lambda _match: replacement, text, count=1, flags=re.S
+    )
+    if substitutions == 0:
+        if replacement in text:
+            return
+        raise SystemExit(
+            f"speckit-bootstrap: upstream artifact changed; hardening pattern is missing in {relative}"
+        )
+    path.write_text(updated, encoding="utf-8")
+
+
+invalid_yaml = (
+    "If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally"
+)
+invalid_yaml_guard = (
+    "If the YAML cannot be parsed or is invalid, STOP with a blocking configuration error; "
+    "do not skip configured hooks"
+)
+mandatory_hook = (
+    "After emitting the block above you MUST actually invoke the hook and wait for it to finish before continuing. "
+    "Run it the same way you would run the command yourself in this agent/session (the invocation may differ from "
+    "the literal `{command}` id shown above, e.g. a skills-mode agent runs it as `/skill:speckit-...` or "
+    "`$speckit-...`). Emitting the block alone does not run the hook."
+)
+mandatory_hook_guard = mandatory_hook + (
+    " Before invocation, classify the hook as read-only or state-changing. Commit, publish, deploy, destructive, "
+    "or other state-changing hooks require explicit user confirmation at this point even when `optional: false`; "
+    "without confirmation, STOP instead of executing them."
+)
+skills = sorted((root / ".agents/skills").glob("speckit-*/SKILL.md"))
+if not skills:
+    raise SystemExit("speckit-bootstrap: generated project-local Spec Kit skills are missing")
+for path in skills:
+    text = path.read_text(encoding="utf-8")
+    updated = text.replace(invalid_yaml, invalid_yaml_guard)
+    if mandatory_hook_guard not in updated:
+        updated = updated.replace(mandatory_hook, mandatory_hook_guard)
+    path.write_text(updated, encoding="utf-8")
+
+replace(
+    ".agents/skills/speckit-clarify/SKILL.md",
+    "Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `$speckit-plan`. "
+    "If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, "
+    "but must warn that downstream rework risk increases.",
+    "Note: This clarification workflow is expected to run (and be completed) BEFORE invoking `$speckit-plan`. "
+    "An explicit skip is allowed only when the selected project risk lane makes clarification optional. Capture, "
+    "privacy, auth, backend, infrastructure, deletion, diagnostics, and high-risk UX lanes MUST NOT skip clarify; "
+    "STOP until the required clarification is complete.",
+)
+
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "   - **If any checklist has unchecked items**:\n"
+    "     - Display the table with unchecked item counts\n"
+    "     - **STOP** and ask: \"Some checklists have unchecked items. Do you want to proceed with implementation anyway? (yes/no)\"\n"
+    "     - Wait for user response before continuing\n"
+    "     - If user says \"no\" or \"wait\" or \"stop\", halt execution\n"
+    "     - If user says \"yes\" or \"proceed\" or \"continue\", proceed to step 3",
+    "   - **If any checklist has unchecked items**:\n"
+    "     - Display the table with unchecked item counts and read the selected risk/validation lane from `plan.md`\n"
+    "     - For a high-risk lane, **STOP** until the reviewer completes the checklist; user risk acceptance cannot bypass this gate\n"
+    "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
+    "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "3. Load and analyze the implementation context:",
+    "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
+    "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
+    "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
+    "4. Load and analyze the implementation context:",
+    count=1,
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "4. **Project Setup Verification**:\n"
+    "   - **REQUIRED**: Create/verify ignore files based on actual project setup:",
+    "5. **Project Setup Verification**:\n"
+    "   - **REQUIRED**: Inspect ignore files based on actual project setup. Modify an ignore file only when a task "
+    "explicitly requires it or the user approves that scoped change; never silently add broad patterns that can hide "
+    "files from review:",
+)
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
+    "- On `converged`: recommend proceeding to review / opening a PR. No further implement pass\n"
+    "  is needed for this feature's specified scope.",
+    "- On `converged`: require the feature quickstart and selected repository/release validation gates next. "
+    "Recommend review / opening a PR only after those gates pass. No further implement pass is needed for this "
+    "feature's specified scope.",
+)
+
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), use it as-is",
+    "1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), "
+    "resolve it against the repository root and reject absolute paths, `..` segments, symlink escapes, or any target outside the repository",
+)
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "   - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point",
+    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, copy the resolved `spec-template` there as the starting point; "
+    "if it already exists, preserve it and load it for the update flow",
+)
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "   - The spec directory and file are always created by this command, never by the hook",
+    "   - A missing spec directory/file is created by this command, never by the hook; an existing spec is updated in place and never overwritten by the template",
+)
+
+replace_regex(
+    ".agents/skills/speckit-taskstoissues/SKILL.md",
+    r"For each issue title, match it against the task ID pattern .*?the skill is re-invoked\.",
+    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
+    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
+    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
+    "prevents duplicates without fetching the whole issue history once all task IDs are matched.",
+)
+replace_regex(
+    ".agents/skills/speckit-taskstoissues/SKILL.md",
+    r"For each task in the list, use the GitHub MCP server to create a new issue.*?\n   - \*\*Skip\*\*",
+    "For each task in the list, use the GitHub MCP server to create a new issue in the repository that matches the "
+    "Git remote. First read `docs/agent-guidance/github-issue-canon.md` when it exists. Under that project canon, "
+    "construct its required feature/priority/area title, Russian outcome, body sections, labels, and traceability; "
+    "the bare `T001: <description>` title is only a fallback for repositories without a project canon. Strip the "
+    "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task.\n"
+    "   - **Skip**",
+)
+
+replace(
+    ".agents/skills/speckit-agent-context-update/SKILL.md",
+    "If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully.",
+    "If `context_files` and `context_file` are empty, the command derives a default target from the active integration "
+    "in `.specify/init-options.json` and `agent-context-defaults.json`; it reports nothing to do only when no mapped target exists.",
+)
+replace(
+    ".agents/skills/speckit-agent-context-update/SKILL.md",
+    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
+    "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
+    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
+    "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
+    "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
+    "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
+)
+replace(
+    ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+    "If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully.",
+    "If `context_files` and `context_file` are empty, the command derives a default target from the active integration "
+    "in `.specify/init-options.json` and `agent-context-defaults.json`; it reports nothing to do only when no mapped target exists.",
+)
+replace(
+    ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
+    "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
+    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
+    "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
+    "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
+    "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "Usage: auto_commit.py <event_name>",
+    "Usage: auto_commit.py <event_name> [--message-file <path>]",
+)
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    for record in content.splitlines(keepends=True):\n"
+    "        if not record.endswith(\"\\n\"):\n"
+    "            break\n"
+    "        line = record[:-1]",
+    "    for line in content.splitlines():",
+)
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "\n\ndef main(argv: list[str]) -> int:\n"
+    "    event_name = argv[0] if argv else \"\"\n"
+    "    if not event_name:\n"
+    "        print(f\"Usage: {Path(sys.argv[0]).name} <event_name>\", file=sys.stderr)\n"
+    "        return 1",
+    "\n\ndef _read_commit_style(config_file: Path) -> str:\n"
+    "    try:\n"
+    "        lines = config_file.read_text(encoding=\"utf-8\").splitlines()\n"
+    "    except (OSError, UnicodeDecodeError):\n"
+    "        return \"fixed\"\n"
+    "    for line in lines:\n"
+    "        if line.startswith(\"commit_style:\"):\n"
+    "            value = _strip_quotes(_value_after_colon(line)).lower()\n"
+    "            if value in {\"fixed\", \"conventional\"}:\n"
+    "                return value\n"
+    "            print(\n"
+    "                f\"[specify] Warning: unknown commit_style '{value}'; defaulting to 'fixed'\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            break\n"
+    "    return \"fixed\"\n"
+    "\n\n"
+    "def main(argv: list[str]) -> int:\n"
+    "    if not argv or (len(argv) != 1 and not (len(argv) == 3 and argv[1] == \"--message-file\")):\n"
+    "        print(\n"
+    "            f\"Usage: {Path(sys.argv[0]).name} <event_name> [--message-file <path>]\",\n"
+    "            file=sys.stderr,\n"
+    "        )\n"
+    "        return 1\n"
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            message_file.unlink()\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1",
+)
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0",
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n"
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/initialize_repo.py",
+    "        ([\"git\", \"add\", \".\"], \"git add\"),\n",
+    "        # Existing files remain unstaged until reviewed explicitly.\n",
+)
+replace(
+    ".specify/extensions/git/scripts/bash/initialize-repo.sh",
+    "_git_out=$(git add . 2>&1) || { echo \"[specify] Error: git add failed: $_git_out\" >&2; exit 1; }\n",
+    "# Existing files remain unstaged until reviewed explicitly.\n",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/initialize-repo.ps1",
+    "    $out = git add . 2>&1 | Out-String\n"
+    "    if ($LASTEXITCODE -ne 0) { throw \"git add failed: $out\" }\n",
+    "    # Existing files remain unstaged until reviewed explicitly.\n",
+)
+for relative in (
+    ".agents/skills/speckit-git-initialize/SKILL.md",
+    ".specify/extensions/git/commands/speckit.git.initialize.md",
+):
+    replace(
+        relative,
+        "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`",
+        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`",
+    )
+    replace(
+        relative,
+        "- Runs `git init`, `git add .`, and `git commit` with an initial commit message",
+        "- Runs `git init` and creates an empty initial commit; existing project files remain unstaged for review",
+    )
+    replace(
+        relative,
+        "If Git is installed but `git init`, `git add .`, or `git commit` fails:",
+        "If Git is installed but `git init` or `git commit` fails:",
+    )
+
+replace(
+    ".specify/templates/checklist-template.md",
+    "  - Implementation details from tasks.md",
+    "  - Relevant constraints from plan.md, research.md, and contracts/ when present",
+)
+replace(
+    ".specify/scripts/bash/check-prerequisites.sh",
+    "# Source common functions\n",
+    "if [[ -n \"$TEMPLATE_NAME\" && \"$PATHS_ONLY\" == true ]]; then\n"
+    "    echo \"ERROR: --template cannot be combined with --paths-only\" >&2\n"
+    "    exit 1\n"
+    "fi\n\n"
+    "# Source common functions\n",
+    count=1,
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                local candidate=\"\"\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    case \"$manifest_file\" in\n"
+    "                        /*|*../*|../*) manifest_file=\"\" ;;\n"
+    "                    esac\n"
+    "                fi\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
+    "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+    "                local candidate=\"\"\n"
+    "                local declared_file=\"$manifest_file\"\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    case \"$manifest_file\" in\n"
+    "                        /*|*../*|../*) manifest_file=\"\" ;;\n"
+    "                    esac\n"
+    "                fi\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
+    "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = true ] && [ -n \"$declared_file\" ]; then\n"
+    "                    echo \"Error: preset '$preset_id' declares template '$template_name' with unresolvable file '$declared_file'\" >&2\n"
+    "                    return 2\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+)
+PY
+
+  echo "speckit-bootstrap: hardened generated Spec Kit workflow guards"
+}
+
 ensure_issue_canon_project_files() {
   local extension="$PROJECT_DIR/.specify/extensions/github-issue-canon"
   [[ -d "$extension" ]] || {
@@ -2010,7 +2383,34 @@ ensure_codex_integration() {
     return
   fi
 
+  if locked_generated_state_matches; then
+    echo "speckit-bootstrap: Codex integration already matches the locked generated state"
+    return
+  fi
+
   specify integration upgrade codex --integration-options="--skills"
+}
+
+locked_generated_state_matches() {
+  local lock
+  local current_skills
+  local saved_skills="$RESOLVED_PROJECT_SKILLS_MANIFEST"
+  lock="$(lock_file)"
+  [[ -f "$lock" ]] || return 1
+  [[ "$(read_lock_value "$lock" schema_version 2>/dev/null || true)" == "3" ]] || return 1
+  [[ "$(read_lock_value "$lock" spec_kit.ref 2>/dev/null || true)" == "$RESOLVED_SPEC_KIT_REF" ]] || return 1
+  [[ "$(read_lock_value "$lock" github_issue_canon.ref 2>/dev/null || true)" == "$RESOLVED_ISSUE_CANON_REF" ]] || return 1
+  [[ "$(read_lock_value "$lock" extensions.agent_context.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash agent-context)" ]] || return 1
+  [[ "$(read_lock_value "$lock" extensions.git.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash git)" ]] || return 1
+  [[ "$(read_lock_value "$lock" github_issue_canon.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash github-issue-canon)" ]] || return 1
+  [[ "$(read_lock_value "$lock" workflow.sha256 2>/dev/null || true)" == "$(sha256_path "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml")" ]] || return 1
+  if ! capture_project_skills_state; then
+    RESOLVED_PROJECT_SKILLS_MANIFEST="$saved_skills"
+    return 1
+  fi
+  current_skills="$RESOLVED_PROJECT_SKILLS_MANIFEST"
+  RESOLVED_PROJECT_SKILLS_MANIFEST="$saved_skills"
+  [[ "$current_skills" == "$(read_lock_json "$lock" project_skills 2>/dev/null || true)" ]]
 }
 
 init_spec_kit_project() {
@@ -2592,6 +2992,7 @@ main() {
   ensure_agent_context_config
   configure_git_auto_commit
   ensure_risk_lane_templates
+  ensure_governed_generated_artifacts
   run_agent_context_update
   ensure_issue_canon_project_files
   ensure_github_agent_instructions

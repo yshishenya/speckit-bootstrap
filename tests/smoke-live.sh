@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v0.15.2}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.0.1}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
@@ -50,6 +50,51 @@ PATH="$(uv tool dir --bin):$PATH"
 export PATH
 
 "$BOOTSTRAP" "$PROJECT" --doctor
+
+grep -Fq 'MUST NOT skip clarify' "$PROJECT/.agents/skills/speckit-clarify/SKILL.md"
+grep -Fq 'existing spec is updated in place' "$PROJECT/.agents/skills/speckit-specify/SKILL.md"
+grep -Fq 'project canon' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq 'STOP with a blocking configuration error' "$PROJECT/.agents/skills/speckit-analyze/SKILL.md"
+grep -Fq 'existing project files remain unstaged for review' "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
+grep -Fq "commit_style is 'conventional'" "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+grep -Fq 'unresolvable file' "$PROJECT/.specify/scripts/bash/common.sh"
+
+GIT_PROBE="$SANDBOX/git-probe"
+mkdir -p "$GIT_PROBE/.specify/extensions"
+cp -R "$PROJECT/.specify/extensions/git" "$GIT_PROBE/.specify/extensions/git"
+printf 'must stay untracked\n' > "$GIT_PROBE/local-secret.env"
+GIT_AUTHOR_NAME='speckit-bootstrap CI' \
+GIT_AUTHOR_EMAIL='ci@example.invalid' \
+GIT_COMMITTER_NAME='speckit-bootstrap CI' \
+GIT_COMMITTER_EMAIL='ci@example.invalid' \
+  python3 "$GIT_PROBE/.specify/extensions/git/scripts/python/initialize_repo.py"
+[[ -z "$(git -C "$GIT_PROBE" ls-files)" ]]
+[[ "$(git -C "$GIT_PROBE" status --short -- local-secret.env)" == '?? local-secret.env' ]]
+
+printf '%s\n' \
+  'commit_style: conventional' \
+  'auto_commit:' \
+  '  default: false' \
+  '  after_specify:' > "$GIT_PROBE/.specify/extensions/git/git-config.yml"
+printf '    enabled: true' >> "$GIT_PROBE/.specify/extensions/git/git-config.yml"
+printf 'fixture\n' > "$GIT_PROBE/tracked.txt"
+AUTO_COMMIT="$GIT_PROBE/.specify/extensions/git/scripts/python/auto_commit.py"
+if python3 "$AUTO_COMMIT" after_specify >/dev/null 2>&1; then
+  echo 'smoke-live: conventional Python auto-commit accepted a missing message' >&2
+  exit 1
+fi
+git -C "$GIT_PROBE" config user.name 'speckit-bootstrap CI'
+git -C "$GIT_PROBE" config user.email 'ci@example.invalid'
+printf 'chore: validate generated git guards\n' > "$SANDBOX/commit-message.txt"
+python3 "$AUTO_COMMIT" after_specify --message-file "$SANDBOX/commit-message.txt"
+[[ "$(git -C "$GIT_PROBE" log -1 --format=%s)" == 'chore: validate generated git guards' ]]
+[[ ! -e "$SANDBOX/commit-message.txt" ]]
+
+if "$PROJECT/.specify/scripts/bash/check-prerequisites.sh" \
+  --json --paths-only --template spec-template >/dev/null 2>&1; then
+  echo 'smoke-live: --template with --paths-only did not fail closed' >&2
+  exit 1
+fi
 
 # Import an installed Python-backed command exactly as the generated command
 # runner does. Runtime bytecode must not alter the locked extension tree.

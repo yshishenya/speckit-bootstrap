@@ -57,7 +57,7 @@ optional Ponytail setup.
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.0/install.sh | bash
 ```
 
 The first-stage installer comes from the immutable release tag. It resolves the
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.1/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.8.1 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.0/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.0 bash
 ```
 
 > [!TIP]
@@ -137,6 +137,9 @@ project-local skill digest. A healthy installation reports
   and source commit is reused without a forced reinstall.
 - **Codex-native workflows.** Generated `speckit-*` skills stay in the
   repository's `.agents/skills`, so each project uses its own locked version.
+- **Governed generated workflows.** Bootstrap applies fail-closed guards for
+  clarification, checklist/analyze gates, safe feature paths, canonical issue
+  sync, validation handoff, and reviewed Git initialization.
 - **Reproducible refreshes.** The lock records versions, commit refs, source
   URLs, workflow hashes, extension trees, and managed skill digests.
 - **Safe GitHub tracking.** The bundled
@@ -380,8 +383,8 @@ bash tests/ci-local.sh
 Run the pinned end-to-end bootstrap smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.15.2 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
+SPEC_KIT_VERSION=v1.0.1 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.2 \
   bash tests/smoke-live.sh
 ```
 
