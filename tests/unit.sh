@@ -838,6 +838,8 @@ for marker in (
     "unresolvable file",
     "commit_style is 'conventional'",
     "existing project files remain unstaged for review",
+    "upstream mandatory hook guard changed",
+    "pending.items()",
 ):
     assert marker in text, marker
 PY

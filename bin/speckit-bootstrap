@@ -1482,6 +1482,7 @@ ensure_extension_from_catalog() {
      { [[ -z "$expected_skill" ]] || [[ -f "$PROJECT_DIR/$expected_skill" ]]; } && \
      [[ -f "$lock" ]] && \
      [[ "$(read_lock_value "$lock" github_issue_canon.ref 2>/dev/null || true)" == "$RESOLVED_ISSUE_CANON_REF" ]] && \
+     [[ "$(read_lock_value "$lock" github_issue_canon.manifest_hash 2>/dev/null || true)" == "$(extension_manifest_hash "$name")" ]] && \
      [[ "$(read_lock_value "$lock" github_issue_canon.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash "$name")" ]]; then
     echo "speckit-bootstrap: $name already matches immutable source $RESOLVED_ISSUE_CANON_REF"
     return 0
@@ -1799,12 +1800,13 @@ ensure_governed_generated_artifacts() {
     return 1
   fi
 
-  python3 - "$PROJECT_DIR" <<'PY'
+  python3 - "$PROJECT_DIR" <<'PY' || return 1
 import re
 import sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
+pending: dict[Path, str] = {}
 
 
 def required(relative: str) -> Path:
@@ -1816,7 +1818,7 @@ def required(relative: str) -> Path:
 
 def replace(relative: str, old: str, new: str, *, count: int = 0) -> None:
     path = required(relative)
-    text = path.read_text(encoding="utf-8")
+    text = pending.get(path, path.read_text(encoding="utf-8"))
     if new in text:
         return
     if old not in text:
@@ -1824,12 +1826,12 @@ def replace(relative: str, old: str, new: str, *, count: int = 0) -> None:
             f"speckit-bootstrap: upstream artifact changed; hardening anchor is missing in {relative}"
         )
     updated = text.replace(old, new) if count == 0 else text.replace(old, new, count)
-    path.write_text(updated, encoding="utf-8")
+    pending[path] = updated
 
 
 def replace_regex(relative: str, pattern: str, replacement: str) -> None:
     path = required(relative)
-    text = path.read_text(encoding="utf-8")
+    text = pending.get(path, path.read_text(encoding="utf-8"))
     updated, substitutions = re.subn(
         pattern, lambda _match: replacement, text, count=1, flags=re.S
     )
@@ -1839,7 +1841,7 @@ def replace_regex(relative: str, pattern: str, replacement: str) -> None:
         raise SystemExit(
             f"speckit-bootstrap: upstream artifact changed; hardening pattern is missing in {relative}"
         )
-    path.write_text(updated, encoding="utf-8")
+    pending[path] = updated
 
 
 invalid_yaml = (
@@ -1865,10 +1867,24 @@ if not skills:
     raise SystemExit("speckit-bootstrap: generated project-local Spec Kit skills are missing")
 for path in skills:
     text = path.read_text(encoding="utf-8")
+    hook_bearing = ".specify/extensions.yml" in text and "EXECUTE_COMMAND" in text
+    if not hook_bearing:
+        continue
     updated = text.replace(invalid_yaml, invalid_yaml_guard)
-    if mandatory_hook_guard not in updated:
-        updated = updated.replace(mandatory_hook, mandatory_hook_guard)
-    path.write_text(updated, encoding="utf-8")
+    protected_guard = "\0SPECKIT_MANDATORY_HOOK_GUARD\0"
+    updated = updated.replace(mandatory_hook_guard, protected_guard)
+    updated = updated.replace(mandatory_hook, mandatory_hook_guard)
+    updated = updated.replace(protected_guard, mandatory_hook_guard)
+    if invalid_yaml in updated or invalid_yaml_guard not in updated:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream hook YAML guard changed in {path.relative_to(root)}"
+        )
+    if updated.count(mandatory_hook) != updated.count(mandatory_hook_guard):
+        raise SystemExit(
+            f"speckit-bootstrap: upstream mandatory hook guard changed in {path.relative_to(root)}"
+        )
+    if updated != text:
+        pending[path] = updated
 
 replace(
     ".agents/skills/speckit-clarify/SKILL.md",
@@ -2148,6 +2164,9 @@ replace(
     "                fi\n"
     "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
 )
+
+for path, content in pending.items():
+    path.write_text(content, encoding="utf-8")
 PY
 
   echo "speckit-bootstrap: hardened generated Spec Kit workflow guards"

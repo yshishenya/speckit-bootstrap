@@ -59,6 +59,55 @@ grep -Fq 'existing project files remain unstaged for review' "$PROJECT/.agents/s
 grep -Fq "commit_style is 'conventional'" "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
 grep -Fq 'unresolvable file' "$PROJECT/.specify/scripts/bash/common.sh"
 
+HARDENING_PROBE="$SANDBOX/hardening-probe"
+mkdir -p "$HARDENING_PROBE"
+cp -R "$PROJECT/.agents" "$HARDENING_PROBE/.agents"
+cp -R "$PROJECT/.specify" "$HARDENING_PROBE/.specify"
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$HARDENING_PROBE"
+  ensure_governed_generated_artifacts
+) >/dev/null
+python3 - \
+  "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" \
+  "$HARDENING_PROBE/.specify/templates/checklist-template.md" <<'PY'
+import sys
+from pathlib import Path
+
+clarify = Path(sys.argv[1])
+text = clarify.read_text(encoding="utf-8")
+assert "MUST NOT skip clarify" in text
+text = text.replace(
+    "An explicit skip is allowed only when the selected project risk lane makes clarification optional. Capture, privacy, auth, backend, infrastructure, deletion, diagnostics, and high-risk UX lanes MUST NOT skip clarify; STOP until the required clarification is complete.",
+    "If the user explicitly states they are skipping clarification (e.g., exploratory spike), you may proceed, but must warn that downstream rework risk increases.",
+)
+clarify.write_text(text, encoding="utf-8")
+
+checklist = Path(sys.argv[2])
+text = checklist.read_text(encoding="utf-8")
+assert "Relevant constraints from plan.md, research.md, and contracts/ when present" in text
+text = text.replace(
+    "Relevant constraints from plan.md, research.md, and contracts/ when present",
+    "Invalid late anchor fixture",
+)
+checklist.write_text(text, encoding="utf-8")
+PY
+CLARIFY_BEFORE="$(sha256sum "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" | awk '{print $1}')"
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$HARDENING_PROBE"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: hardening accepted a missing late anchor' >&2
+  exit 1
+fi
+CLARIFY_AFTER="$(sha256sum "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" | awk '{print $1}')"
+[[ "$CLARIFY_BEFORE" == "$CLARIFY_AFTER" ]]
+
 GIT_PROBE="$SANDBOX/git-probe"
 mkdir -p "$GIT_PROBE/.specify/extensions"
 cp -R "$PROJECT/.specify/extensions/git" "$GIT_PROBE/.specify/extensions/git"

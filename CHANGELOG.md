@@ -28,6 +28,9 @@ All notable changes to this project are documented in this file.
   of treating bootstrap-owned hardening as a user integration conflict.
 - Keep frozen replay mutation-free by applying generated hardening only during
   non-frozen refreshes before the new lock is captured.
+- Validate every generated hardening anchor before writing any transformed file,
+  propagate transformation failures explicitly, and reject locked issue-canon
+  registry metadata drift instead of blessing it.
 - Bring the Python auto-commit port in line with the documented conventional
   message-file contract and parse a valid final config line without requiring a
   trailing newline.
