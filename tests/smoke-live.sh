@@ -320,7 +320,7 @@ grep -Fq "run \`\$speckit-taskstoissues\` first" "$PROJECT/.agents/skills/specki
 grep -Fq "Push-Location \$repoRoot" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
 grep -Fq 'sys.dont_write_bytecode = True' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 grep -Fq 'Load minimal question context' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
-grep -Fq 'documents listed in `AVAILABLE_DOCS`' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
+grep -Fq "documents listed in \`AVAILABLE_DOCS\`" "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
 grep -Fq 'Deduplicate the task IDs before processing them' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'add a successfully created ID to the covered set' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'Never remove an existing checklist' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
@@ -338,8 +338,8 @@ done
 grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
-grep -Fq '$linksResolved -gt 40' "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
-grep -Fq '$segments.Insert(0, $targetSegments[$i])' "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+grep -Fq "\$linksResolved -gt 40" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+grep -Fq "\$segments.Insert(0, \$targetSegments[\$i])" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq 'cygpath -am' "$PROJECT/.specify/extensions/git/scripts/bash/auto-commit.sh"
 if rg -q 'skip hook checking silently' "$PROJECT/.agents/skills"/speckit-*/SKILL.md; then
   echo 'smoke-live: a generated post-hook still fails open on malformed YAML' >&2
@@ -460,7 +460,7 @@ PY
 (
   # shellcheck disable=SC1090,SC1091
   source "$COMMAND_PROBE/.specify/scripts/bash/common.sh"
-  [[ "$(format_speckit_command plan "$COMMAND_PROBE")" == '$speckit-plan' ]]
+  [[ "$(format_speckit_command plan "$COMMAND_PROBE")" == "\$speckit-plan" ]]
 )
 python3 - "$COMMAND_PROBE/.specify/integration.json" <<'PY'
 import json
