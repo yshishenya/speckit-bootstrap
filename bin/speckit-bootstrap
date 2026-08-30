@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.6"
+BOOTSTRAP_VERSION="0.9.7"
 
 usage() {
   cat <<'EOF'
@@ -1831,6 +1831,21 @@ def replace(relative: str, old: str, new: str, *, count: int = 0) -> None:
     pending[path] = updated
 
 
+def replace_chain(relative: str, *states: str) -> None:
+    path = required(relative)
+    text = pending.get(path, path.read_text(encoding="utf-8"))
+    counts = [text.count(state) for state in states]
+    if counts[-1] == 1 and sum(counts) == 1:
+        return
+    for state, count in zip(states[:-1], counts[:-1]):
+        if count == 1 and sum(counts) == 1:
+            pending[path] = text.replace(state, states[-1], 1)
+            return
+    raise SystemExit(
+        f"speckit-bootstrap: upstream artifact changed; migration state is unknown in {relative}"
+    )
+
+
 def replace_regex(relative: str, pattern: str, replacement: str) -> None:
     path = required(relative)
     text = pending.get(path, path.read_text(encoding="utf-8"))
@@ -1864,6 +1879,19 @@ mandatory_hook_guard = mandatory_hook + (
     "or other state-changing hooks require explicit user confirmation at this point even when `optional: false`; "
     "without confirmation, STOP instead of executing them."
 )
+condition_policy = (
+    "- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:\n"
+    "  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable\n"
+    "  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the "
+    "HookExecutor implementation"
+)
+condition_guard = (
+    "- For each remaining hook, do **not** interpret the `condition` expression yourself:\n"
+    "  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable\n"
+    "  - If an optional hook defines a non-empty `condition`, skip it and leave evaluation to HookExecutor\n"
+    "  - If a mandatory hook defines a non-empty `condition`, invoke HookExecutor and wait for its result; "
+    "if HookExecutor is unavailable, STOP with a blocking error instead of continuing"
+)
 skills = sorted((root / ".agents/skills").glob("speckit-*/SKILL.md"))
 if not skills:
     raise SystemExit("speckit-bootstrap: generated project-local Spec Kit skills are missing")
@@ -1877,6 +1905,7 @@ for path in skills:
     updated = updated.replace(mandatory_hook_guard, protected_guard)
     updated = updated.replace(mandatory_hook, mandatory_hook_guard)
     updated = updated.replace(protected_guard, mandatory_hook_guard)
+    updated = updated.replace(condition_policy, condition_guard)
     if invalid_yaml_skip.search(updated) or invalid_yaml_guard not in updated:
         raise SystemExit(
             f"speckit-bootstrap: upstream hook YAML guard changed in {path.relative_to(root)}"
@@ -1887,6 +1916,10 @@ for path in skills:
     ):
         raise SystemExit(
             f"speckit-bootstrap: upstream mandatory hook guard changed in {path.relative_to(root)}"
+        )
+    if condition_policy in updated or condition_guard not in updated:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream conditional hook guard changed in {path.relative_to(root)}"
         )
     if updated != text:
         pending[path] = updated
@@ -1925,6 +1958,15 @@ replace(
     "  `unrequested` addition with unclear justification.\n"
     "- **LOW**: minor partial gaps, polish, or low-risk `unrequested` additions.",
 )
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
+    "- **`unrequested`**: the code contains work not called for by the spec, plan, or tasks\n"
+    "  (surfaced for awareness — converge does **not** delete code, it only appends a task to\n"
+    "  review/justify or remove it).",
+    "- **`unrequested`**: the code contains work not called for by the spec, plan, or tasks. Emit this finding "
+    "only when diff/commit/task provenance shows the current feature slice introduced the code; otherwise "
+    "reconcile it against the merged product baseline and do not append a removal task for pre-existing shared code.",
+)
 
 replace(
     ".agents/skills/speckit-clarify/SKILL.md",
@@ -1938,6 +1980,17 @@ replace(
 )
 
 replace(
+    ".agents/skills/speckit-plan/SKILL.md",
+    "3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:",
+    "3. **Verify the clarification gate**: Determine the selected risk lane from the feature artifacts, user "
+    "request, and project guidance. Capture, privacy, auth, backend, infrastructure, deletion, diagnostics, and "
+    "high-risk UX work require current `$speckit-clarify` evidence in `spec.md`; if the lane is unclear or the "
+    "evidence is absent/stale, STOP and run `$speckit-clarify`. Do not convert required user decisions into "
+    "research assumptions.\n\n"
+    "4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:",
+)
+
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "   - **If any checklist has unchecked items**:\n"
     "     - Display the table with unchecked item counts\n"
@@ -1950,17 +2003,27 @@ replace(
     "     - For a high-risk lane, **STOP** until the reviewer completes the checklist; user risk acceptance cannot bypass this gate\n"
     "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
     "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
+    "   - **If any checklist has unchecked items**:\n"
+    "     - Display the table with unchecked item counts and read the selected risk/validation lane from `plan.md`; "
+    "treat a missing, unrecognized, or ambiguous lane as high-risk for this gate\n"
+    "     - For a high-risk lane, **STOP** until the reviewer completes the checklist; user risk acceptance cannot bypass this gate\n"
+    "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
+    "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
 )
-replace(
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "3. Load and analyze the implementation context:",
     "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
     "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
     "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
     "4. Load and analyze the implementation context:",
-    count=1,
+    "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
+    "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
+    "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
+    "`$speckit-taskstoissues`.\n\n"
+    "5. Load and analyze the implementation context:",
 )
-replace(
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "4. **Project Setup Verification**:\n"
     "   - **REQUIRED**: Create/verify ignore files based on actual project setup:",
@@ -1968,6 +2031,35 @@ replace(
     "   - **REQUIRED**: Inspect ignore files based on actual project setup. Modify an ignore file only when a task "
     "explicitly requires it or the user approves that scoped change; never silently add broad patterns that can hide "
     "files from review:",
+    "6. **Project Setup Verification**:\n"
+    "   - **REQUIRED**: Inspect ignore files based on actual project setup. Modify an ignore file only when a task "
+    "explicitly requires it or the user approves that scoped change; never silently add broad patterns that can hide "
+    "files from review:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "5. Parse tasks.md structure and extract:",
+    "7. Parse tasks.md structure and extract:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "6. Execute implementation following the task plan:",
+    "8. Execute implementation following the task plan:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "7. Implementation execution rules:",
+    "9. Implementation execution rules:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "8. Progress tracking and error handling:",
+    "10. Progress tracking and error handling:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "9. Completion validation:",
+    "11. Completion validation:",
 )
 replace(
     ".agents/skills/speckit-converge/SKILL.md",
@@ -2516,6 +2608,40 @@ replace(
     "        _err(f\"# To persist: {_persist_hint('SPECIFY_FEATURE', branch_name)}\")",
     "        if args.json_mode:\n"
     "            _err(f\"# To persist in your shell: {_persist_hint('SPECIFY_FEATURE', branch_name)}\")",
+)
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "def _local_has_git(repo_root: Path) -> bool:\n"
+    "    git_marker = repo_root / \".git\"\n"
+    "    if not (git_marker.is_dir() or git_marker.is_file()):\n"
+    "        return False\n"
+    "    if shutil.which(\"git\") is None:\n"
+    "        return False",
+    "def _local_has_git(repo_root: Path) -> bool:\n"
+    "    if shutil.which(\"git\") is None:\n"
+    "        return False",
+)
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "    else:\n"
+    "        toplevel = _git_lines(Path.cwd(), \"rev-parse\", \"--show-toplevel\")\n"
+    "        if toplevel:\n"
+    "            repo_root = Path(toplevel[0])\n"
+    "        elif project_root is not None:\n"
+    "            repo_root = project_root\n"
+    "        else:\n"
+    "            _err(\"Error: Could not determine repository root.\")\n"
+    "            return 1",
+    "    else:\n"
+    "        if project_root is not None:\n"
+    "            repo_root = project_root\n"
+    "        else:\n"
+    "            toplevel = _git_lines(Path.cwd(), \"rev-parse\", \"--show-toplevel\")\n"
+    "            if toplevel:\n"
+    "                repo_root = Path(toplevel[0])\n"
+    "            else:\n"
+    "                _err(\"Error: Could not determine repository root.\")\n"
+    "                return 1",
 )
 
 replace(
