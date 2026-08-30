@@ -1970,7 +1970,8 @@ replace(
 
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
-    r"For each issue title, match it against the task ID pattern .*?the skill is re-invoked\.",
+    r"(?:For each issue title, match it against the task ID pattern .*?the skill is re-invoked\."
+    r"|For each issue, match the task ID pattern .*?once all task IDs are matched\.)",
     "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
     "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
     "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "

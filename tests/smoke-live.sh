@@ -107,6 +107,43 @@ fi
 rm -f "$CORE_HELPER"
 rmdir "$(dirname "$CORE_HELPER")"
 
+UPGRADE_PROBE="$SANDBOX/upgrade-probe"
+mkdir -p "$UPGRADE_PROBE"
+cp -R "$PROJECT/.agents" "$UPGRADE_PROBE/.agents"
+cp -R "$PROJECT/.specify" "$UPGRADE_PROBE/.specify"
+python3 - "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+current = (
+    "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
+    "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
+    "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
+    "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
+    "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
+    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
+    "or a reconciled closed owner, or when there are no more pages."
+)
+previous = (
+    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
+    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
+    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
+    "prevents duplicates without fetching the whole issue history once all task IDs are matched."
+)
+assert current in text
+path.write_text(text.replace(current, previous), encoding="utf-8")
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$UPGRADE_PROBE"
+  ensure_governed_generated_artifacts
+) >/dev/null
+grep -Fq 'Spec Kit task IDs: T001, T002' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
+
 HARDENING_PROBE="$SANDBOX/hardening-probe"
 mkdir -p "$HARDENING_PROBE"
 cp -R "$PROJECT/.agents" "$HARDENING_PROBE/.agents"
