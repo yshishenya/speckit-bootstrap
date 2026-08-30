@@ -6,6 +6,35 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.0] - 2026-08-30
+
+### Added
+
+- Harden generated Spec Kit skills and scripts with fail-closed gates for
+  mandatory clarification, reviewer-owned checklists, analyze evidence,
+  validation handoff, canonical issue sync, safe feature paths, hook parsing,
+  template composition, and scoped ignore-file changes.
+
+### Changed
+
+- Validate the stable compatibility lane against Spec Kit v1.0.1 and
+  `github-issue-canon` v0.3.2.
+- Initialize new Git repositories with an empty initial commit so existing
+  project files remain unstaged until explicitly reviewed.
+
+### Fixed
+
+- Recognize an unchanged locked generated state during repeat refreshes instead
+  of treating bootstrap-owned hardening as a user integration conflict.
+- Keep frozen replay mutation-free by applying generated hardening only during
+  non-frozen refreshes before the new lock is captured.
+- Validate every generated hardening anchor before writing any transformed file,
+  propagate transformation failures explicitly, and reject locked issue-canon
+  registry metadata drift instead of blessing it.
+- Bring the Python auto-commit port in line with the documented conventional
+  message-file contract and parse a valid final config line without requiring a
+  trailing newline.
+
 ## [0.8.1] - 2026-08-30
 
 ### Fixed

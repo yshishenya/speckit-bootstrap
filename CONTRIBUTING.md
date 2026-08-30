@@ -7,8 +7,8 @@ opening a pull request, run:
 
 ```sh
 bash tests/ci-local.sh
-SPEC_KIT_VERSION=v0.15.2 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
+SPEC_KIT_VERSION=v1.0.1 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.2 \
   bash tests/smoke-live.sh
 ```
 
