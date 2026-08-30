@@ -26,6 +26,8 @@ All notable changes to this project are documented in this file.
 
 - Recognize an unchanged locked generated state during repeat refreshes instead
   of treating bootstrap-owned hardening as a user integration conflict.
+- Keep frozen replay mutation-free by applying generated hardening only during
+  non-frozen refreshes before the new lock is captured.
 - Bring the Python auto-commit port in line with the documented conventional
   message-file contract and parse a valid final config line without requiring a
   trailing newline.

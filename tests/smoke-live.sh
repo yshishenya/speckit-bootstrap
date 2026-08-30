@@ -70,6 +70,7 @@ GIT_COMMITTER_EMAIL='ci@example.invalid' \
   python3 "$GIT_PROBE/.specify/extensions/git/scripts/python/initialize_repo.py"
 [[ -z "$(git -C "$GIT_PROBE" ls-files)" ]]
 [[ "$(git -C "$GIT_PROBE" status --short -- local-secret.env)" == '?? local-secret.env' ]]
+rm "$GIT_PROBE/local-secret.env"
 
 printf '%s\n' \
   'commit_style: conventional' \

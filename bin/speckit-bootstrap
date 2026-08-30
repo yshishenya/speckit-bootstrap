@@ -2992,7 +2992,9 @@ main() {
   ensure_agent_context_config
   configure_git_auto_commit
   ensure_risk_lane_templates
-  ensure_governed_generated_artifacts
+  if [[ "$FROZEN" -eq 0 ]]; then
+    ensure_governed_generated_artifacts
+  fi
   run_agent_context_update
   ensure_issue_canon_project_files
   ensure_github_agent_instructions

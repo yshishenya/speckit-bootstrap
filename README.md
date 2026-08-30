@@ -196,7 +196,7 @@ speckit-bootstrap . --frozen
 Frozen mode preserves the lock and fails if locked executable inputs have
 drifted.
 
-Locks created by v0.7 use schema v2. Run v0.8 once without `--frozen` to
+Locks created by v0.7 use schema v2. Run v0.9 once without `--frozen` to
 regenerate them as schema v3 before using frozen mode again. That migration
 preserves all user-level `speckit-*` copies and warns when manual duplicate
 cleanup may be useful; project files never authorize deletion from your home

@@ -828,6 +828,7 @@ call = "  ensure_governed_generated_artifacts\n"
 capture = "    capture_project_dependency_state\n"
 assert text.count(call) == 1
 assert text.index(call) < text.index(capture)
+assert 'if [[ "$FROZEN" -eq 0 ]]; then\n    ensure_governed_generated_artifacts' in text
 for marker in (
     "MUST NOT skip clarify",
     "existing spec is updated in place",
