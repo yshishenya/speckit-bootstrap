@@ -61,7 +61,7 @@ PY
 
 # Keep live smoke isolated from the developer's Codex plugin state; production
 # bootstrap runs enable Ponytail by default unless this explicit opt-out is set.
-export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
+export SPECKIT_PONYTAIL=0
 
 "$BOOTSTRAP" "$PROJECT"
 
