@@ -58,12 +58,12 @@ speckit-bootstrap .
 ### 1. Установите или обновите
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
 ```
 
-Первый установщик загружается из immutable release tag. Он определяет последний
-GitHub Release, скачивает исполняемый файл и его SHA-256, проверяет checksum и
-синтаксис shell, а затем атомарно устанавливает команду в:
+Rolling-установщик из `main` определяет последний GitHub Release, скачивает
+исполняемый файл и его SHA-256, проверяет checksum и синтаксис shell, а затем
+атомарно устанавливает команду в:
 
 ```text
 ~/.local/bin/speckit-bootstrap
@@ -345,7 +345,7 @@ speckit-bootstrap . --skip-ponytail
 - `python3`
 - [`uv`](https://docs.astral.sh/uv/)
 
-`codex` CLI требуется только при явном включении Ponytail.
+`codex` CLI требуется, если Ponytail явно не отключён.
 
 Поддерживаемая матрица:
 
@@ -360,7 +360,9 @@ speckit-bootstrap . --skip-ponytail
 supply chain, а не как безобидную документацию.
 
 - При установке executable сверяется с опубликованным SHA-256.
-- Первый установщик в документации закреплён на immutable release tag.
+- Rolling-установщик определяет последний release и сверяет скачанный
+  executable с опубликованным SHA-256; для полностью immutable bootstrap можно
+  указать release tag вручную.
 - Внешние release tags разрешаются в неизменяемые commits.
 - Release asset issue-canon сверяется с checksum каталога.
 - Управляемый marketplace Ponytail закрепляет источник плагина на commit.

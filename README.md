@@ -57,12 +57,12 @@ is explicitly disabled.
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
 ```
 
-The first-stage installer comes from the immutable release tag. It resolves the
-latest GitHub Release, downloads the executable and its SHA-256 file, verifies
-the checksum and shell syntax, and installs it atomically at:
+The rolling installer from `main` resolves the latest GitHub Release, downloads
+the executable and its SHA-256 file, verifies the checksum and shell syntax, and
+installs it atomically at:
 
 ```text
 ~/.local/bin/speckit-bootstrap
@@ -165,7 +165,7 @@ flowchart LR
     A["speckit-bootstrap ."] --> B["Official GitHub Spec Kit<br/>tag resolved to commit SHA"]
     A --> C["Codex skills<br/>.agents/skills"]
     A --> D["GitHub issue canon<br/>templates + hooks"]
-    A -. optional .-> E["Ponytail plugin<br/>pinned source + guidance"]
+    A --> E["Ponytail plugin<br/>pinned source + guidance"]
     B --> F["Reproducibility lock"]
     C --> F
     D --> F
@@ -350,7 +350,7 @@ Required:
 - `python3`
 - [`uv`](https://docs.astral.sh/uv/)
 
-The `codex` CLI is required only when Ponytail is explicitly enabled.
+The `codex` CLI is required unless Ponytail is explicitly disabled.
 
 The maintained compatibility matrix is:
 
@@ -365,7 +365,9 @@ The project treats generated agent instructions as executable supply-chain
 inputs, not harmless documentation.
 
 - Release installation verifies the executable against its published SHA-256.
-- The documented first-stage installer is pinned to the immutable release tag.
+- The rolling first-stage installer resolves the latest release and verifies the
+  downloaded executable against its published SHA-256; pin a release tag for a
+  fully immutable bootstrap source.
 - External release tags are resolved to immutable commits.
 - The issue-canon release asset is verified against the catalog checksum.
 - Ponytail's managed marketplace descriptor pins its plugin source to a commit.
