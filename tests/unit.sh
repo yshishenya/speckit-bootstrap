@@ -839,6 +839,7 @@ for marker in (
     "commit_style is 'conventional'",
     "existing project files remain unstaged for review",
     "upstream mandatory hook guard changed",
+    "updated.count(mandatory_hook_guard) == 0",
     "pending.items()",
 ):
     assert marker in text, marker

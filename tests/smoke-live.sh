@@ -108,6 +108,46 @@ fi
 CLARIFY_AFTER="$(sha256sum "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" | awk '{print $1}')"
 [[ "$CLARIFY_BEFORE" == "$CLARIFY_AFTER" ]]
 
+HOOK_PROBE="$SANDBOX/hook-probe"
+mkdir -p "$HOOK_PROBE"
+cp -R "$PROJECT/.agents" "$HOOK_PROBE/.agents"
+cp -R "$PROJECT/.specify" "$HOOK_PROBE/.specify"
+python3 - "$HOOK_PROBE/.agents/skills" <<'PY'
+import sys
+from pathlib import Path
+
+skills = Path(sys.argv[1])
+guard_start = "After emitting the block above you MUST actually invoke the hook"
+guard_end = "without confirmation, STOP instead of executing them."
+for path in sorted(skills.glob("speckit-*/SKILL.md")):
+    text = path.read_text(encoding="utf-8")
+    if ".specify/extensions.yml" not in text or "EXECUTE_COMMAND" not in text:
+        continue
+    updated = text
+    removed = 0
+    while (start := updated.find(guard_start)) >= 0:
+        end = updated.find(guard_end, start)
+        if end < 0:
+            raise SystemExit("smoke-live: incomplete mandatory hook guard fixture")
+        updated = updated[:start] + updated[end + len(guard_end):]
+        removed += 1
+    if removed:
+        path.write_text(updated, encoding="utf-8")
+        break
+else:
+    raise SystemExit("smoke-live: no hook-bearing skill with a mandatory guard found")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$HOOK_PROBE"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: hardening accepted a hook-bearing skill without a mandatory guard' >&2
+  exit 1
+fi
+
 GIT_PROBE="$SANDBOX/git-probe"
 mkdir -p "$GIT_PROBE/.specify/extensions"
 cp -R "$PROJECT/.specify/extensions/git" "$GIT_PROBE/.specify/extensions/git"

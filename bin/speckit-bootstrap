@@ -1879,7 +1879,10 @@ for path in skills:
         raise SystemExit(
             f"speckit-bootstrap: upstream hook YAML guard changed in {path.relative_to(root)}"
         )
-    if updated.count(mandatory_hook) != updated.count(mandatory_hook_guard):
+    if (
+        updated.count(mandatory_hook_guard) == 0
+        or updated.count(mandatory_hook) != updated.count(mandatory_hook_guard)
+    ):
         raise SystemExit(
             f"speckit-bootstrap: upstream mandatory hook guard changed in {path.relative_to(root)}"
         )
