@@ -89,6 +89,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY"
-          gh release verify-asset "$RELEASE_TAG" dist/speckit-bootstrap --repo "$GITHUB_REPOSITORY"
-          gh release verify-asset "$RELEASE_TAG" dist/speckit-bootstrap.sha256 --repo "$GITHUB_REPOSITORY"
+          for attempt in 1 2 3 4 5; do
+            if gh release verify "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" &&
+              gh release verify-asset "$RELEASE_TAG" dist/speckit-bootstrap --repo "$GITHUB_REPOSITORY" &&
+              gh release verify-asset "$RELEASE_TAG" dist/speckit-bootstrap.sha256 --repo "$GITHUB_REPOSITORY"; then
+              exit 0
+            fi
+            [[ "$attempt" -eq 5 ]] && exit 1
+            sleep 10
+          done

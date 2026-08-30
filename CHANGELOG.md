@@ -4,7 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-- No entries yet.
+### Fixed
+
+- Retry immutable release verification for up to 40 seconds while GitHub
+  finishes publishing release attestations.
 
 ## [0.9.0] - 2026-08-30
 
