@@ -105,6 +105,75 @@ fi
 mv "$SANDBOX/git-initialize-skill.backup" "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+# v0.9.1 already carried partial hardening in these two files. A later patch
+# must migrate that exact intermediate state without accepting mixed forms.
+python3 - \
+  "$PROJECT/.specify/scripts/bash/common.sh" \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" <<'PY'
+import sys
+from pathlib import Path
+
+common = Path(sys.argv[1])
+auto_commit = Path(sys.argv[2])
+final_case = '/*|..|../*|*/..|*/../*) manifest_file="" ;;'
+v091_case = '/*|*../*|../*) manifest_file="" ;;'
+caller_cleanup = (
+    "            # Caller owns and cleans up the transport file; never delete it here."
+)
+v091_cleanup = "            message_file.unlink()"
+
+common_text = common.read_text(encoding="utf-8")
+auto_commit_text = auto_commit.read_text(encoding="utf-8")
+assert common_text.count(final_case) == 1
+assert auto_commit_text.count(caller_cleanup) == 1
+common.write_text(common_text.replace(final_case, v091_case, 1), encoding="utf-8")
+auto_commit.write_text(
+    auto_commit_text.replace(caller_cleanup, v091_cleanup, 1), encoding="utf-8"
+)
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+)
+grep -Fq '/*|..|../*|*/..|*/../*) manifest_file="" ;;' \
+  "$PROJECT/.specify/scripts/bash/common.sh"
+grep -Fq 'Caller owns and cleans up the transport file' \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+
+cp "$PROJECT/.specify/scripts/bash/common.sh" "$SANDBOX/common.sh.backup"
+python3 - "$PROJECT/.specify/scripts/bash/common.sh" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+start = text.index('                local candidate=""\n                local declared_file="$manifest_file"')
+end_marker = '                if [ -z "$candidate" ] && [ "$manifest_declared" = false ]; then'
+end = text.index(end_marker, start) + len(end_marker)
+final_block = text[start:end]
+v091_block = final_block.replace(
+    '/*|..|../*|*/..|*/../*) manifest_file="" ;;',
+    '/*|*../*|../*) manifest_file="" ;;',
+)
+assert final_block != v091_block
+path.write_text(text + "\n" + v091_block + "\n", encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: mixed preset-manifest fallback forms were accepted' >&2
+  exit 1
+fi
+mv "$SANDBOX/common.sh.backup" "$PROJECT/.specify/scripts/bash/common.sh"
+"$BOOTSTRAP" "$PROJECT" --doctor
+
 grep -Fq 'MUST NOT skip clarify' "$PROJECT/.agents/skills/speckit-clarify/SKILL.md"
 grep -Fq 'existing spec is updated in place' "$PROJECT/.agents/skills/speckit-specify/SKILL.md"
 grep -Fq 'project canon' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
