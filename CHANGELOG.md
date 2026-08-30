@@ -6,6 +6,24 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.2] - 2026-08-30
+
+### Changed
+
+- Require generated checklist, Git feature, Git initialization, auto-commit and
+  convergence guidance to preserve reviewer ownership, use structured arguments,
+  and stop before unsafe or unrelated commits.
+
+### Fixed
+
+- Fail closed for malformed post-hook configuration, grade every convergence
+  finding, preserve caller-owned external commit-message files while rejecting
+  worktree-local ones, and keep clean-worktree conventional auto-commit behavior
+  consistent across ports.
+- Resolve PowerShell plan candidates through symlinks, remove duplicate Python
+  persist hints, surface extension enumeration diagnostics, and reject every
+  parent-path form in declared preset templates.
+
 ## [0.9.1] - 2026-08-30
 
 ### Changed
