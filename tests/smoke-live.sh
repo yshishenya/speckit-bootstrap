@@ -629,7 +629,7 @@ grep -Fq 'Verify the analyze gate before external issue sync' \
   "$HARDENING_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'do not guess or discard material decisions' \
   "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md"
-grep -Fq 'ready for `$speckit-clarify`, not planning' \
+grep -Fq 'unresolved markers mean the spec is ready for' \
   "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md"
 
 printf 'branch_template: features/{number}-{slgu}\n' > \
