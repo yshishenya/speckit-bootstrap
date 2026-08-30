@@ -58,7 +58,7 @@ speckit-bootstrap .
 ### 1. Установите или обновите
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.3/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.5/install.sh | bash
 ```
 
 Первый установщик загружается из immutable release tag. Он определяет последний
@@ -79,8 +79,8 @@ speckit-bootstrap --version
 Повторный запуск установщика обновляет bootstrap. Для конкретной версии:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.3/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.3 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.5/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.5 bash
 ```
 
 > [!TIP]
