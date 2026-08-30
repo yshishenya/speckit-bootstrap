@@ -407,7 +407,7 @@ PY
 if missing_python_output="$(
   # shellcheck disable=SC1090,SC1091
   source "$PRESET_PROBE/.specify/scripts/bash/common.sh"
-  # shellcheck disable=SC2329
+  # shellcheck disable=SC2317,SC2329
   _python3_command() { return 1; }
   resolve_template spec-template "$PRESET_PROBE" 2>&1
   )"; then
