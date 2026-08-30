@@ -2907,7 +2907,7 @@ replace(
     count=1,
 )
 
-replace(
+replace_variants(
     ".specify/extensions/git/scripts/bash/create-new-feature-branch.sh",
     "    local feature_segment\n"
     "    feature_segment=\"${template##*/}\"\n"
@@ -2932,6 +2932,76 @@ replace(
     "    esac\n"
     "    feature_segment=\"${template##*/}\"\n"
     "    case \"$template\" in",
+    "    local feature_segment\n"
+    "    local unsupported_tokens=\"$template\"\n"
+    "    case \"$template\" in\n"
+    "        *'${author}'*|*'${app}'*|*'${number}'*|*'${slug}'*|\\\n"
+    "        *'$author'*|*'$app'*|*'$number'*|*'$slug'*)\n"
+    "            >&2 echo \"Error: branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{author\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{app\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{number\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{slug\\}/}\n"
+    "    case \"$unsupported_tokens\" in\n"
+    "        *\"{\"*|*\"}\"*)\n"
+    "            >&2 echo \"Error: branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    feature_segment=\"${template##*/}\"\n"
+    "    case \"$template\" in",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "    if not template:\n"
+    "        return\n"
+    "    if \"{number}\" not in template:",
+    "    if not template:\n"
+    "        return\n"
+    "    shell_tokens = (\n"
+    "        \"${author}\", \"${app}\", \"${number}\", \"${slug}\",\n"
+    "        \"$author\", \"$app\", \"$number\", \"$slug\",\n"
+    "    )\n"
+    "    if any(token in template for token in shell_tokens):\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains a shell-style placeholder. Use \"\n"
+    "            \"{author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    unsupported_tokens = template\n"
+    "    for token in (\"{author}\", \"{app}\", \"{number}\", \"{slug}\"):\n"
+    "        unsupported_tokens = unsupported_tokens.replace(token, \"\")\n"
+    "    if \"{\" in unsupported_tokens or \"}\" in unsupported_tokens:\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains an unsupported or malformed placeholder. \"\n"
+    "            \"Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    if \"{number}\" not in template:",
+)
+
+replace(
+    ".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1",
+    "    if ($Template -and -not $Template.Contains('{number}')) {",
+    "    if (-not $Template) { return }\n\n"
+    "    $shellTokens = @('${author}', '${app}', '${number}', '${slug}', '$author', '$app', '$number', '$slug')\n"
+    "    foreach ($token in $shellTokens) {\n"
+    "        if ($Template.Contains($token)) {\n"
+    "            throw \"branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "        }\n"
+    "    }\n"
+    "    $unsupportedTokens = $Template\n"
+    "    foreach ($token in @('{author}', '{app}', '{number}', '{slug}')) {\n"
+    "        $unsupportedTokens = $unsupportedTokens.Replace($token, '')\n"
+    "    }\n"
+    "    if ($unsupportedTokens.Contains('{') -or $unsupportedTokens.Contains('}')) {\n"
+    "        throw \"branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "    }\n"
+    "    if (-not $Template.Contains('{number}')) {",
 )
 
 replace(

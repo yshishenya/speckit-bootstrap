@@ -336,6 +336,8 @@ for script in \
   grep -Fq 'message file must be outside the Git worktree' "$script"
 done
 grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq 'unsupported_tokens = template' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq "\$unsupportedTokens = \$Template" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
 grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq "\$linksResolved -gt 40" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
@@ -649,6 +651,26 @@ if (
   exit 1
 fi
 grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+if (
+  cd "$HARDENING_PROBE"
+  python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+    --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
+) >"$BRANCH_ERROR" 2>&1; then
+  echo 'smoke-live: Python accepted an unsupported branch-template placeholder' >&2
+  exit 1
+fi
+grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+if command -v pwsh >/dev/null 2>&1; then
+  if (
+    cd "$HARDENING_PROBE"
+    pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+      -DryRun -Number 999 -ShortName placeholder-probe 'placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: PowerShell accepted an unsupported branch-template placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+fi
 DOLLAR='$'
 printf 'branch_template: %s\n' "${DOLLAR}{author}/{number}-{slug}" > \
   "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
@@ -658,6 +680,17 @@ if (
     --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
 ) >"$BRANCH_ERROR" 2>&1; then
   echo 'smoke-live: shell-style branch-template placeholder was accepted' >&2
+  exit 1
+fi
+grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+printf 'branch_template: %s\n' "features/${DOLLAR}slug/{number}-{slug}" > \
+  "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
+if (
+  cd "$HARDENING_PROBE"
+  bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+) >"$BRANCH_ERROR" 2>&1; then
+  echo 'smoke-live: unbraced shell-style branch-template placeholder was accepted' >&2
   exit 1
 fi
 grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"

@@ -872,6 +872,8 @@ for marker in (
     "unresolved markers mean the spec is ready for",
     "branch_template contains an unsupported or malformed placeholder",
     "branch_template contains a shell-style placeholder",
+    "unsupported_tokens = template",
+    "$unsupportedTokens = $Template",
 ):
     assert marker in text, marker
 PY
