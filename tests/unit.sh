@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.7" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.8" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -865,6 +865,12 @@ for marker in (
     "entry.get('parsed_options', {}).get('skills') is True",
     "return stripped",
     "pending.items()",
+    "immediately integrate the accepted answer",
+    "Verify the checklist gate before task generation",
+    "Verify the analyze gate before external issue sync",
+    "do not guess or discard material decisions",
+    "unresolved markers mean the spec is ready for",
+    "branch_template contains an unsupported or malformed placeholder",
 ):
     assert marker in text, marker
 PY
