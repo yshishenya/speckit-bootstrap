@@ -2433,15 +2433,21 @@ for relative in (
     initialize_text = pending.get(
         initialize_path, initialize_path.read_text(encoding="utf-8")
     )
-    if blocking_fallback not in initialize_text:
-        if unsafe_fallback in initialize_text:
-            replace(relative, unsafe_fallback, blocking_fallback)
-        elif v091_fallback in initialize_text:
-            replace(relative, v091_fallback, blocking_fallback)
-        else:
-            raise SystemExit(
-                f"speckit-bootstrap: upstream artifact changed; Git initialization fallback is unknown in {relative}"
-            )
+    fallback_counts = {
+        fallback: initialize_text.count(fallback)
+        for fallback in (blocking_fallback, unsafe_fallback, v091_fallback)
+    }
+    if fallback_counts[blocking_fallback] == 1 and sum(fallback_counts.values()) == 1:
+        continue
+    if fallback_counts[blocking_fallback] == 0 and sum(fallback_counts.values()) == 1:
+        legacy_fallback = next(
+            fallback for fallback, count in fallback_counts.items() if count == 1
+        )
+        replace(relative, legacy_fallback, blocking_fallback)
+        continue
+    raise SystemExit(
+        f"speckit-bootstrap: upstream artifact changed; Git initialization fallback is unknown in {relative}"
+    )
 
 replace(
     ".specify/templates/checklist-template.md",
