@@ -912,6 +912,8 @@ for marker in (
     "Deduplicate the task IDs before processing them",
     "Never remove an existing checklist",
     "never auto-committed",
+    "auto-commits are pre-approved",
+    "configured Spec Kit auto-commit hooks are the exception",
     "native argument array/binding",
     "blocking installation error",
     "Numbering is per-project only",

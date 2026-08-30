@@ -1901,7 +1901,9 @@ mandatory_hook = (
 mandatory_hook_guard = mandatory_hook + (
     " Before invocation, classify the hook as read-only or state-changing. Commit, publish, deploy, destructive, "
     "or other state-changing hooks require explicit user confirmation at this point even when `optional: false`; "
-    "without confirmation, STOP instead of executing them."
+    "the configured Spec Kit auto-commit hooks are the exception: when enabled, they are pre-approved and run "
+    "without an additional confirmation after their command-owned scope has been checked. Without confirmation, "
+    "STOP instead of executing publish, deploy, destructive, or other non-auto-commit state changes."
 )
 condition_policy = (
     "- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:\n"
@@ -2227,17 +2229,19 @@ replace(
     "5. Determines the commit message based on `commit_style` (see below)\n"
     "6. Inspects `git status` and STOPS when the worktree contains changes outside the paths owned by the triggering "
     "Spec Kit command; auto-commit must never absorb unrelated or secret-bearing files\n"
-    "7. Requires explicit user confirmation immediately before every state-changing commit; `after_implement` is "
-    "never auto-committed and remains a manual post-validation commit\n"
+    "7. Treats enabled documentation-stage auto-commits as pre-approved: after checking that every changed path is "
+    "owned by the triggering command, runs without an additional confirmation; `after_implement` is never auto-committed "
+    "and remains a manual post-validation commit\n"
     "8. Only then, if enabled and there are command-owned changes, runs the configured auto-commit script",
 )
 replace(
     ".agents/skills/speckit-git-commit/SKILL.md",
     "Determine the event name from the hook that triggered this command, then run the script:",
     "Determine the event name from the hook that triggered this command. Before invoking a script, inspect `git "
-    "status --short`, verify every changed path belongs to that command, and obtain explicit user confirmation for "
-    "the commit. If the event is `after_implement`, do not invoke auto-commit; finish validation and use a manual "
-    "user-approved implementation commit instead. Then run the script:",
+    "status --short` and verify every changed path belongs to that command. Enabled documentation-stage "
+    "auto-commits are pre-approved and need no additional confirmation. If the event is `after_implement`, do not "
+    "invoke auto-commit; finish validation and use a manual user-approved implementation commit instead. Then run "
+    "the script:",
 )
 replace(
     ".agents/skills/speckit-git-commit/SKILL.md",

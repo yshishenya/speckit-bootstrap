@@ -266,7 +266,8 @@ This project is deliberately more than a package installer. It installs a
 reviewable development policy intended to keep agents, repository artifacts,
 and external tracking aligned:
 
-- Git auto-commit is enabled after completed documentation stages:
+- Git auto-commit runs without an additional confirmation after completed
+  documentation stages:
   `constitution`, `specify`, `clarify`, `plan`, `checklist`, `tasks`, and
   `analyze`.
 - Every `before_*` hook, `after_implement`, and `after_taskstoissues` stays
