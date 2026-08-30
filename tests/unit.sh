@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.5" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.6" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -846,6 +846,8 @@ for marker in (
     "Push-Location $repoRoot",
     "sys.dont_write_bytecode = True",
     "Load minimal question context",
+    "documents listed in `AVAILABLE_DOCS`",
+    "Deduplicate the task IDs before processing them",
     "Never remove an existing checklist",
     "never auto-committed",
     "native argument array/binding",
@@ -856,6 +858,12 @@ for marker in (
     "if args.json_mode",
     "failed to enumerate extensions",
     "Resolve-ContextPath -Root $ProjectRoot",
+    "linksResolved",
+    "_resolve_preset_candidate",
+    "preset enabled for {pid} must be boolean",
+    "cygpath -am",
+    "entry.get('parsed_options', {}).get('skills') is True",
+    "return stripped",
     "pending.items()",
 ):
     assert marker in text, marker

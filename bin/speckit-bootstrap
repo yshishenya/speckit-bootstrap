@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.5"
+BOOTSTRAP_VERSION="0.9.6"
 
 usage() {
   cat <<'EOF'
@@ -1891,12 +1891,15 @@ for path in skills:
     if updated != text:
         pending[path] = updated
 
-replace(
+replace_regex(
     ".agents/skills/speckit-checklist/SKILL.md",
-    "3. **Clarify intent (dynamic)**: Derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST:",
-    "3. **Load minimal question context and clarify intent (dynamic)**: Read the portions of `spec.md`, `plan.md`, "
-    "and `tasks.md` needed for question generation, then derive up to THREE initial contextual clarifying questions "
-    "(no pre-baked catalog). They MUST:",
+    r"(?:3\. \*\*Clarify intent \(dynamic\)\*\*: Derive up to THREE initial contextual clarifying questions "
+    r"\(no pre-baked catalog\)\. They MUST:|3\. \*\*Load minimal question context and clarify intent "
+    r"\(dynamic\)\*\*: Read the portions of `spec\.md`, `plan\.md`, and `tasks\.md` needed for question "
+    r"generation, then derive up to THREE initial contextual clarifying questions \(no pre-baked catalog\)\. They MUST:)",
+    "3. **Load minimal question context and clarify intent (dynamic)**: Read only the needed portions of feature "
+    "documents listed in `AVAILABLE_DOCS`; skip unavailable documents and use `$ARGUMENTS` when needed context is "
+    "absent. Then derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST:",
 )
 replace(
     ".agents/skills/speckit-checklist/SKILL.md",
@@ -2005,14 +2008,16 @@ replace(
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
     r"(?:For each issue title, match it against the task ID pattern .*?the skill is re-invoked\."
-    r"|For each issue, match the task ID pattern .*?once all task IDs are matched\.)",
+    r"|For each issue, match the task ID pattern .*?once all task IDs are matched\."
+    r"|For each issue, establish task ownership only from a canonical title .*?when there are no more pages\.)",
     "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
     "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
     "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
     "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
     "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
-    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
-    "or a reconciled closed owner, or when there are no more pages.",
+    "create a duplicate while a closed match is unresolved. Deduplicate the task IDs before processing them. Stop "
+    "paginating only when every unique task ID has an open owner or a reconciled closed owner, or when there are no "
+    "more pages.",
 )
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
@@ -2021,7 +2026,8 @@ replace_regex(
     "Git remote. First read `docs/agent-guidance/github-issue-canon.md` when it exists. Under that project canon, "
     "construct its required feature/priority/area title, Russian outcome, body sections, labels, and traceability; "
     "the bare `T001: <description>` title is only a fallback for repositories without a project canon. Strip the "
-    "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task.\n"
+    "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task. Iterate each unique task ID "
+    "once and add a successfully created ID to the covered set before processing the next task.\n"
     "   - **Skip**",
 )
 
@@ -2302,17 +2308,21 @@ replace(
     "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"\n"
     "            # Caller owns and cleans up the transport file; never delete it here.",
 )
-replace(
-    ".specify/extensions/git/scripts/bash/auto-commit.sh",
+bash_auto_commit_path = required(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh"
+)
+bash_auto_commit_text = pending.get(
+    bash_auto_commit_path, bash_auto_commit_path.read_text(encoding="utf-8")
+)
+bash_containment_preamble = (
     "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then\n"
     "    echo \"[specify] Warning: Not a Git repository; skipped auto-commit\" >&2\n"
     "    exit 0\n"
-    "fi",
-    "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then\n"
-    "    echo \"[specify] Warning: Not a Git repository; skipped auto-commit\" >&2\n"
-    "    exit 0\n"
-    "fi\n\n"
-    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
+    "fi"
+)
+bash_containment_v095 = (
+    bash_containment_preamble
+    + "\n\n_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
     "for _message_path in \"${_message_file:-}\" \"${_resolved_message_file:-}\"; do\n"
     "    case \"$_message_path\" in\n"
     "        \"$_worktree_root\"|\"$_worktree_root\"/*)\n"
@@ -2320,8 +2330,37 @@ replace(
     "            exit 1\n"
     "            ;;\n"
     "    esac\n"
-    "done",
+    "done"
 )
+bash_containment_v096 = bash_containment_v095.replace(
+    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n",
+    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
+    "if command -v cygpath >/dev/null 2>&1; then\n"
+    "    _worktree_root=\"$(cygpath -am \"$_worktree_root\")\"\n"
+    "    [ -z \"${_message_file:-}\" ] || _message_file=\"$(cygpath -am \"$_message_file\")\"\n"
+    "    [ -z \"${_resolved_message_file:-}\" ] || _resolved_message_file=\"$(cygpath -am \"$_resolved_message_file\")\"\n"
+    "fi\n",
+    1,
+)
+bash_containment_state = (
+    bash_auto_commit_text.count(bash_containment_preamble),
+    bash_auto_commit_text.count(bash_containment_v095),
+    bash_auto_commit_text.count(bash_containment_v096),
+)
+if bash_containment_state == (1, 0, 0):
+    bash_auto_commit_text = bash_auto_commit_text.replace(
+        bash_containment_preamble, bash_containment_v096, 1
+    )
+elif bash_containment_state == (1, 1, 0):
+    bash_auto_commit_text = bash_auto_commit_text.replace(
+        bash_containment_v095, bash_containment_v096, 1
+    )
+elif bash_containment_state != (1, 0, 1):
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Bash message containment form is unknown "
+        f"{bash_containment_state}"
+    )
+pending[bash_auto_commit_path] = bash_auto_commit_text
 replace(
     ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
     "    # The message file is a transport-only artifact: its content is now\n"
@@ -2502,6 +2541,80 @@ replace(
     "                }",
 )
 replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    $rootFull = [System.IO.Path]::GetFullPath($Root)\n"
+    "    $segments = $RelativePath -split '/'\n"
+    "    $resolved = $rootFull\n\n"
+    "    foreach ($segment in $segments) {\n"
+    "        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {\n"
+    "            continue\n"
+    "        }\n\n"
+    "        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))\n"
+    "        if (Test-Path -LiteralPath $candidate) {\n"
+    "            $item = Get-Item -LiteralPath $candidate -Force\n"
+    "            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {\n"
+    "                $target = $item.Target\n"
+    "                if ($target -is [System.Array]) {\n"
+    "                    $target = $target[0]\n"
+    "                }\n"
+    "                if ($target) {\n"
+    "                    if ([System.IO.Path]::IsPathRooted($target)) {\n"
+    "                        $candidate = [System.IO.Path]::GetFullPath($target)\n"
+    "                    } else {\n"
+    "                        $candidate = [System.IO.Path]::GetFullPath(\n"
+    "                            (Join-Path (Split-Path -Parent $candidate) $target)\n"
+    "                        )\n"
+    "                    }\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        $resolved = $candidate\n"
+    "    }",
+    "    $rootFull = [System.IO.Path]::GetFullPath($Root)\n"
+    "    $segments = [System.Collections.Generic.List[string]]::new()\n"
+    "    foreach ($segment in ($RelativePath -split '[\\\\/]')) {\n"
+    "        $segments.Add($segment)\n"
+    "    }\n"
+    "    $resolved = $rootFull\n"
+    "    $linksResolved = 0\n\n"
+    "    while ($segments.Count -gt 0) {\n"
+    "        $segment = $segments[0]\n"
+    "        $segments.RemoveAt(0)\n"
+    "        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {\n"
+    "            continue\n"
+    "        }\n\n"
+    "        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))\n"
+    "        if (Test-Path -LiteralPath $candidate) {\n"
+    "            $item = Get-Item -LiteralPath $candidate -Force\n"
+    "            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {\n"
+    "                $target = $item.Target\n"
+    "                if ($target -is [System.Array]) {\n"
+    "                    $target = $target[0]\n"
+    "                }\n"
+    "                if ($target) {\n"
+    "                    $linksResolved++\n"
+    "                    if ($linksResolved -gt 40) {\n"
+    "                        throw \"Too many symbolic links while resolving '$RelativePath'\"\n"
+    "                    }\n"
+    "                    $targetFull = if ([System.IO.Path]::IsPathRooted($target)) {\n"
+    "                        [System.IO.Path]::GetFullPath($target)\n"
+    "                    } else {\n"
+    "                        [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $candidate) $target))\n"
+    "                    }\n"
+    "                    $targetRoot = [System.IO.Path]::GetPathRoot($targetFull)\n"
+    "                    $targetSegments = $targetFull.Substring($targetRoot.Length) -split '[\\\\/]'\n"
+    "                    for ($i = $targetSegments.Count - 1; $i -ge 0; $i--) {\n"
+    "                        $segments.Insert(0, $targetSegments[$i])\n"
+    "                    }\n"
+    "                    $resolved = $targetRoot\n"
+    "                    continue\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        $resolved = $candidate\n"
+    "    }",
+)
+replace(
     ".specify/extensions/git/scripts/python/initialize_repo.py",
     "        ([\"git\", \"add\", \".\"], \"git add\"),\n",
     "        # Existing files remain unstaged until reviewed explicitly.\n",
@@ -2580,6 +2693,74 @@ replace(
     "# Source common functions\n",
     count=1,
 )
+
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "    leading_ws = len(content) - len(content.lstrip())\n"
+    "    leading = content[:leading_ws]\n"
+    "    stripped = content[leading_ws:]",
+    "    stripped = content.lstrip()",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "        return content\n\n"
+    "    if re.search(r\"(?m)^[ \\t]*alwaysApply[ \\t]*:\", fm_text):",
+    "        return stripped\n\n"
+    "    if re.search(r\"(?m)^[ \\t]*alwaysApply[ \\t]*:\", fm_text):",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "    return f\"{leading}{opening}{fm_text}{closing}{sep}{rest}\"",
+    "    return f\"{opening}{fm_text}{closing}{sep}{rest}\"",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    $leading = ''\n"
+    "    $stripped = $Content\n"
+    "    $m = [regex]::Match($Content, '^\\s*')\n"
+    "    if ($m.Success) {\n"
+    "        $leading = $m.Value\n"
+    "        $stripped = $Content.Substring($m.Length)\n"
+    "    }",
+    "    $stripped = $Content.TrimStart()",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "        return $Content\n"
+    "    }\n\n"
+    "    if ([regex]::IsMatch($fmText, '(?m)^[ \\t]*alwaysApply[ \\t]*:')) {",
+    "        return $stripped\n"
+    "    }\n\n"
+    "    if ([regex]::IsMatch($fmText, '(?m)^[ \\t]*alwaysApply[ \\t]*:')) {",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    return \"$leading$opening$fmText$closing$sep$rest\"",
+    "    return \"$opening$fmText$closing$sep$rest\"",
+)
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "    printf '$speckit%s%s\\n' \"$separator\" \"$command_name\"",
+    "    local prefix=\"/\"\n"
+    "    local integration_json=\"$repo_root/.specify/integration.json\"\n"
+    "    local python_spec=\"\"\n"
+    "    local -a python_cmd=()\n"
+    "    if [ -f \"$integration_json\" ] && python_spec=$(_python3_command); then\n"
+    "        read -r -a python_cmd <<< \"$python_spec\"\n"
+    "        if SPECKIT_INTEGRATION=\"$integration_json\" \"${python_cmd[@]}\" -c \"\n"
+    "import json, os, sys\n"
+    "with open(os.environ['SPECKIT_INTEGRATION'], encoding='utf-8') as fh:\n"
+    "    state = json.load(fh)\n"
+    "key = state.get('default_integration') or state.get('integration')\n"
+    "entry = state.get('integration_settings', {}).get(key, {})\n"
+    "sys.exit(0 if entry.get('parsed_options', {}).get('skills') is True else 1)\n"
+    "\" 2>/dev/null; then\n"
+    "            prefix='$'\n"
+    "        fi\n"
+    "    fi\n\n"
+    "    printf '%s%s%s\\n' \"$prefix\" \"speckit$separator\" \"$command_name\"",
+)
 manifest_upstream = (
     "                local candidate=\"\"\n"
     "                if [ -n \"$manifest_file\" ]; then\n"
@@ -2647,6 +2828,156 @@ else:
         "speckit-bootstrap: upstream artifact changed; preset manifest fallback is unknown"
     )
 
+replace(
+    ".specify/scripts/bash/common.sh",
+    "# Resolve a template name to a file path using the priority stack:\n",
+    "_resolve_preset_candidate() {\n"
+    "    local presets_dir=\"$1\" preset_id=\"$2\" candidate=\"$3\"\n"
+    "    [ -f \"$candidate\" ] || return 1\n"
+    "    local python_spec=\"\"\n"
+    "    local -a python_cmd=()\n"
+    "    if ! python_spec=$(_python3_command); then\n"
+    "        echo \"Error: Python 3 is required to validate preset template paths\" >&2\n"
+    "        return 2\n"
+    "    fi\n"
+    "    read -r -a python_cmd <<< \"$python_spec\"\n"
+    "    local resolved=\"\"\n"
+    "    if ! resolved=$(SPECKIT_PRESETS_ROOT=\"$presets_dir\" SPECKIT_PRESET_ID=\"$preset_id\" "
+    "SPECKIT_PRESET_CANDIDATE=\"$candidate\" \"${python_cmd[@]}\" -c \"\n"
+    "import os, sys\n"
+    "from pathlib import Path\n"
+    "try:\n"
+    "    presets_root = Path(os.environ['SPECKIT_PRESETS_ROOT']).resolve(strict=True)\n"
+    "    preset_root = (presets_root / os.environ['SPECKIT_PRESET_ID']).resolve(strict=True)\n"
+    "    preset_root.relative_to(presets_root)\n"
+    "    candidate = Path(os.environ['SPECKIT_PRESET_CANDIDATE']).resolve(strict=True)\n"
+    "    candidate.relative_to(preset_root)\n"
+    "    if not candidate.is_file():\n"
+    "        raise ValueError('candidate is not a file')\n"
+    "    print(candidate)\n"
+    "except (OSError, ValueError):\n"
+    "    sys.exit(1)\n"
+    "\" 2>/dev/null); then\n"
+    "        echo \"Error: preset '$preset_id' template escapes its preset directory\" >&2\n"
+    "        return 2\n"
+    "    fi\n"
+    "    printf '%s\\n' \"$resolved\"\n"
+    "}\n\n"
+    "# Resolve a template name to a file path using the priority stack:\n",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                        local candidate=\"$presets_dir/$preset_id/templates/${template_name}.md\"\n"
+    "                        [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                        candidate=\"$presets_dir/$preset_id/${template_name}.md\"\n"
+    "                        [ -f \"$candidate\" ] && echo \"$candidate\" && return 0",
+    "                        local candidate=\"$presets_dir/$preset_id/templates/${template_name}.md\"\n"
+    "                        local resolved_candidate=\"\"\n"
+    "                        if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                            echo \"$resolved_candidate\"\n"
+    "                            return 0\n"
+    "                        elif [ \"$?\" -eq 2 ]; then\n"
+    "                            return 2\n"
+    "                        fi\n"
+    "                        candidate=\"$presets_dir/$preset_id/${template_name}.md\"\n"
+    "                        if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                            echo \"$resolved_candidate\"\n"
+    "                            return 0\n"
+    "                        elif [ \"$?\" -eq 2 ]; then\n"
+    "                            return 2\n"
+    "                        fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                candidate=\"$preset/${template_name}.md\"\n"
+    "                [ -f \"$candidate\" ] && echo \"$candidate\" && return 0",
+    "                local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                local resolved_candidate=\"\"\n"
+    "                if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$(basename \"$preset\")\" \"$candidate\"); then\n"
+    "                    echo \"$resolved_candidate\"\n"
+    "                    return 0\n"
+    "                elif [ \"$?\" -eq 2 ]; then\n"
+    "                    return 2\n"
+    "                fi\n"
+    "                candidate=\"$preset/${template_name}.md\"\n"
+    "                if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$(basename \"$preset\")\" \"$candidate\"); then\n"
+    "                    echo \"$resolved_candidate\"\n"
+    "                    return 0\n"
+    "                elif [ \"$?\" -eq 2 ]; then\n"
+    "                    return 2\n"
+    "                fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                if [ -n \"$candidate\" ]; then\n"
+    "                    layer_paths+=(\"$candidate\")",
+    "                if [ -n \"$candidate\" ]; then\n"
+    "                    local resolved_candidate=\"\"\n"
+    "                    if ! resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                        return 2\n"
+    "                    fi\n"
+    "                    candidate=\"$resolved_candidate\"\n"
+    "                    layer_paths+=(\"$candidate\")",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "            else\n"
+    "                # python3 failed (missing, or registry parse error) — fall back to unordered directory scan\n"
+    "                for preset in \"$presets_dir\"/*/; do\n"
+    "                    [ -d \"$preset\" ] || continue\n"
+    "                    local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                    [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                    candidate=\"$preset/${template_name}.md\"\n"
+    "                    [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                done\n"
+    "            fi",
+    "            else\n"
+    "                echo \"Error: invalid preset registry $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "\" 2>/dev/null); then\n"
+    "                registry_parsed=true\n"
+    "            fi\n"
+    "        fi\n"
+    "        if [ \"$registry_parsed\" = false ]; then",
+    "\" 2>/dev/null); then\n"
+    "                registry_parsed=true\n"
+    "            else\n"
+    "                echo \"Error: invalid preset registry $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "        fi\n"
+    "        if [ \"$registry_parsed\" = false ]; then",
+)
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "    presets = data.get('presets', {})\n"
+    "    def priority(meta):",
+    "    presets = data.get('presets', {})\n"
+    "    if not isinstance(presets, dict):\n"
+    "        raise ValueError('preset registry presets must be a mapping')\n"
+    "    for pid, meta in presets.items():\n"
+    "        if not isinstance(pid, str) or not re.fullmatch(r'[a-z0-9-]+', pid):\n"
+    "            raise ValueError('preset id must match [a-z0-9-]+')\n"
+    "        if not isinstance(meta, dict):\n"
+    "            raise ValueError(f'preset metadata for {pid} must be a mapping')\n"
+    "        if not isinstance(meta.get('enabled', True), bool):\n"
+    "            raise ValueError(f'preset enabled for {pid} must be boolean')\n"
+    "    def priority(meta):",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):\n"
+    "            print(pid)",
+    "        if meta.get('enabled', True):\n"
+    "            print(pid)",
+)
 replace(
     ".specify/scripts/bash/common.sh",
     "        else\n"

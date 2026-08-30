@@ -320,6 +320,9 @@ grep -Fq "run \`\$speckit-taskstoissues\` first" "$PROJECT/.agents/skills/specki
 grep -Fq "Push-Location \$repoRoot" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
 grep -Fq 'sys.dont_write_bytecode = True' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 grep -Fq 'Load minimal question context' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
+grep -Fq 'documents listed in `AVAILABLE_DOCS`' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
+grep -Fq 'Deduplicate the task IDs before processing them' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq 'add a successfully created ID to the covered set' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'Never remove an existing checklist' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
 grep -Fq 'never auto-committed' "$PROJECT/.agents/skills/speckit-git-commit/SKILL.md"
 grep -Fq 'native argument array/binding' "$PROJECT/.agents/skills/speckit-git-feature/SKILL.md"
@@ -335,6 +338,9 @@ done
 grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+grep -Fq '$linksResolved -gt 40' "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+grep -Fq '$segments.Insert(0, $targetSegments[$i])' "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+grep -Fq 'cygpath -am' "$PROJECT/.specify/extensions/git/scripts/bash/auto-commit.sh"
 if rg -q 'skip hook checking silently' "$PROJECT/.agents/skills"/speckit-*/SKILL.md; then
   echo 'smoke-live: a generated post-hook still fails open on malformed YAML' >&2
   exit 1
@@ -362,6 +368,120 @@ if (
   exit 1
 fi
 mv "$REGISTRY_BACKUP" "$REGISTRY"
+
+PRESET_PROBE="$SANDBOX/preset-probe"
+mkdir -p \
+  "$PRESET_PROBE/.specify/scripts/bash" \
+  "$PRESET_PROBE/.specify/presets/example/templates" \
+  "$PRESET_PROBE/.specify/templates"
+cp "$PROJECT/.specify/scripts/bash/common.sh" "$PRESET_PROBE/.specify/scripts/bash/common.sh"
+printf 'core\n' > "$PRESET_PROBE/.specify/templates/spec-template.md"
+python3 - "$PRESET_PROBE/.specify/presets/.registry" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps({"presets": {"example": {"enabled": "false"}}}),
+    encoding="utf-8",
+)
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$PRESET_PROBE/.specify/scripts/bash/common.sh"
+  resolve_template spec-template "$PRESET_PROBE"
+) >/dev/null 2>&1; then
+  echo 'smoke-live: malformed preset registry metadata was accepted' >&2
+  exit 1
+fi
+python3 - "$PRESET_PROBE/.specify/presets/.registry" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    json.dumps({"presets": {"example": {"enabled": True}}}),
+    encoding="utf-8",
+)
+PY
+printf 'outside\n' > "$PRESET_PROBE/outside.md"
+ln -s "$PRESET_PROBE/outside.md" "$PRESET_PROBE/.specify/presets/example/templates/spec-template.md"
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$PRESET_PROBE/.specify/scripts/bash/common.sh"
+  resolve_template spec-template "$PRESET_PROBE"
+) >/dev/null 2>&1; then
+  echo 'smoke-live: preset template symlink escape was accepted' >&2
+  exit 1
+fi
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$PRESET_PROBE/.specify/scripts/bash/common.sh"
+  resolve_template_content spec-template "$PRESET_PROBE"
+) >/dev/null 2>&1; then
+  echo 'smoke-live: composed preset template symlink escape was accepted' >&2
+  exit 1
+fi
+
+python3 - "$PROJECT/.specify/extensions/agent-context/scripts/python/update_agent_context.py" <<'PY'
+import importlib.util
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True
+path = Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location("agent_context_probe", path)
+module = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(module)
+result = module.ensure_mdc_frontmatter(" \n---\nalwaysApply: true\n---\nbody\n")
+assert result.startswith("---\n"), repr(result)
+assert not result.startswith((" ", "\n")), repr(result)
+PY
+
+COMMAND_PROBE="$SANDBOX/command-probe"
+mkdir -p "$COMMAND_PROBE/.specify/scripts/bash"
+cp "$PROJECT/.specify/scripts/bash/common.sh" "$COMMAND_PROBE/.specify/scripts/bash/common.sh"
+python3 - "$COMMAND_PROBE/.specify/integration.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "default_integration": "codex",
+    "integration_settings": {
+        "codex": {
+            "invoke_separator": "-",
+            "parsed_options": {"skills": True},
+        }
+    },
+}), encoding="utf-8")
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$COMMAND_PROBE/.specify/scripts/bash/common.sh"
+  [[ "$(format_speckit_command plan "$COMMAND_PROBE")" == '$speckit-plan' ]]
+)
+python3 - "$COMMAND_PROBE/.specify/integration.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(json.dumps({
+    "default_integration": "claude",
+    "integration_settings": {
+        "claude": {
+            "invoke_separator": ".",
+            "parsed_options": {"skills": False},
+        }
+    },
+}), encoding="utf-8")
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$COMMAND_PROBE/.specify/scripts/bash/common.sh"
+  [[ "$(format_speckit_command plan "$COMMAND_PROBE")" == '/speckit.plan' ]]
+)
 
 BRANCH_SCRIPT="$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 CORE_HELPER="$PROJECT/.specify/scripts/python/common.py"
@@ -400,14 +520,18 @@ current = (
     "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
     "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
     "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
-    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
-    "or a reconciled closed owner, or when there are no more pages."
+    "create a duplicate while a closed match is unresolved. Deduplicate the task IDs before processing them. Stop "
+    "paginating only when every unique task ID has an open owner or a reconciled closed owner, or when there are no "
+    "more pages."
 )
 previous = (
-    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
-    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
-    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
-    "prevents duplicates without fetching the whole issue history once all task IDs are matched."
+    "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
+    "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
+    "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
+    "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
+    "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
+    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
+    "or a reconciled closed owner, or when there are no more pages."
 )
 assert current in text
 path.write_text(text.replace(current, previous), encoding="utf-8")
@@ -420,6 +544,7 @@ PY
   ensure_governed_generated_artifacts
 ) >/dev/null
 grep -Fq 'Spec Kit task IDs: T001, T002' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq 'Deduplicate the task IDs before processing them' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
 
 HARDENING_PROBE="$SANDBOX/hardening-probe"
 mkdir -p "$HARDENING_PROBE"
