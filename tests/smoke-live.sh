@@ -345,7 +345,7 @@ grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions
 grep -Fq "\$linksResolved -gt 40" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq "\$segments.Insert(0, \$targetSegments[\$i])" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq 'cygpath -am' "$PROJECT/.specify/extensions/git/scripts/bash/auto-commit.sh"
-if rg -q 'skip hook checking silently' "$PROJECT/.agents/skills"/speckit-*/SKILL.md; then
+if grep -R -q 'skip hook checking silently' "$PROJECT/.agents/skills"; then
   echo 'smoke-live: a generated post-hook still fails open on malformed YAML' >&2
   exit 1
 fi
