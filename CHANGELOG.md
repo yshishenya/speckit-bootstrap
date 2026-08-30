@@ -17,8 +17,9 @@ All notable changes to this project are documented in this file.
 ### Fixed
 
 - Fail closed for malformed post-hook configuration, grade every convergence
-  finding, preserve caller-owned commit-message files, and keep clean-worktree
-  conventional auto-commit behavior consistent across ports.
+  finding, preserve caller-owned external commit-message files while rejecting
+  worktree-local ones, and keep clean-worktree conventional auto-commit behavior
+  consistent across ports.
 - Resolve PowerShell plan candidates through symlinks, remove duplicate Python
   persist hints, surface extension enumeration diagnostics, and reject every
   parent-path form in declared preset templates.

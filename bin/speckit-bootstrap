@@ -2129,8 +2129,13 @@ replace(
     "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
 )
 
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_path = required(".specify/extensions/git/scripts/python/auto_commit.py")
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+if "def _read_commit_style" not in auto_commit_text:
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
     "Usage: auto_commit.py <event_name>",
     "Usage: auto_commit.py <event_name> [--message-file <path>]",
 )
@@ -2142,8 +2147,12 @@ replace(
     "        line = record[:-1]",
     "    for line in content.splitlines():",
 )
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+if "def _read_commit_style" not in auto_commit_text:
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
     "\n\ndef main(argv: list[str]) -> int:\n"
     "    event_name = argv[0] if argv else \"\"\n"
     "    if not event_name:\n"
@@ -2182,9 +2191,24 @@ replace(
     "            # Caller owns and cleans up the transport file; never delete it here.\n"
     "        except (OSError, UnicodeDecodeError) as exc:\n"
     "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
-    "            return 1",
-)
+        "            return 1",
+    )
 
+replace(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh",
+    "            if [ ! -f \"$_message_file\" ]; then\n"
+    "                echo \"[specify] Error: message file '$_message_file' not found\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"",
+    "            if [ ! -f \"$_message_file\" ]; then\n"
+    "                echo \"[specify] Error: message file '$_message_file' not found\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            _message_dir=\"$(CDPATH=\"\" cd \"$(dirname \"$_message_file\")\" && pwd -P)\"\n"
+    "            _message_file=\"$_message_dir/$(basename \"$_message_file\")\"\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"",
+)
 replace(
     ".specify/extensions/git/scripts/bash/auto-commit.sh",
     "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"\n"
@@ -2199,6 +2223,24 @@ replace(
     "            # Caller owns and cleans up the transport file; never delete it here.",
 )
 replace(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh",
+    "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then\n"
+    "    echo \"[specify] Warning: Not a Git repository; skipped auto-commit\" >&2\n"
+    "    exit 0\n"
+    "fi",
+    "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then\n"
+    "    echo \"[specify] Warning: Not a Git repository; skipped auto-commit\" >&2\n"
+    "    exit 0\n"
+    "fi\n\n"
+    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
+    "case \"${_message_file:-}\" in\n"
+    "    \"$_worktree_root\"|\"$_worktree_root\"/*)\n"
+    "        echo \"[specify] Error: message file must be outside the Git worktree\" >&2\n"
+    "        exit 1\n"
+    "        ;;\n"
+    "esac",
+)
+replace(
     ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
     "    # The message file is a transport-only artifact: its content is now\n"
     "    # captured above, so remove it immediately. Otherwise, if it was written\n"
@@ -2208,6 +2250,78 @@ replace(
     "    # else changed.\n"
     "    Remove-Item -Path $MessageFile -Force -ErrorAction SilentlyContinue",
     "    # Caller owns and cleans up the transport file; never delete it here.",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "$ErrorActionPreference = 'Stop'\n\n"
+    "if ($MessageFile) {",
+    "$ErrorActionPreference = 'Stop'\n"
+    "$messageFilePaths = @()\n\n"
+    "if ($MessageFile) {",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw)",
+    "    $literalMessageFile = [System.IO.Path]::GetFullPath($MessageFile)\n"
+    "    $resolvedMessageFile = (Resolve-Path -LiteralPath $MessageFile).Path\n"
+    "    $messageFilePaths = @($literalMessageFile, $resolvedMessageFile)\n"
+    "    $GeneratedMessage = (Get-Content -LiteralPath $MessageFile -Raw)",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "if (-not $isRepo) {\n"
+    "    Write-Warning \"[specify] Warning: Not a Git repository; skipped auto-commit\"\n"
+    "    exit 0\n"
+    "}",
+    "if (-not $isRepo) {\n"
+    "    Write-Warning \"[specify] Warning: Not a Git repository; skipped auto-commit\"\n"
+    "    exit 0\n"
+    "}\n\n"
+    "$worktreeRoot = [System.IO.Path]::GetFullPath((git rev-parse --show-toplevel).Trim())\n"
+    "$worktreePrefix = $worktreeRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, "
+    "[System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar\n"
+    "$comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { "
+    "[System.StringComparison]::Ordinal }\n"
+    "foreach ($messagePath in $messageFilePaths) {\n"
+    "    $fullMessagePath = [System.IO.Path]::GetFullPath($messagePath)\n"
+    "    if ($fullMessagePath.Equals($worktreeRoot, $comparison) -or "
+    "$fullMessagePath.StartsWith($worktreePrefix, $comparison)) {\n"
+    "        Write-Warning \"[specify] Error: message file must be outside the Git worktree\"\n"
+    "        exit 1\n"
+    "    }\n"
+    "}",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])",
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()",
+)
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    script_dir = Path(__file__).resolve().parent\n"
+    "    repo_root = _find_project_root(script_dir) or Path.cwd()",
+    "    script_dir = Path(__file__).resolve().parent\n"
+    "    repo_root = (_find_project_root(script_dir) or Path.cwd()).resolve()\n"
+    "    if message_file is not None and resolved_message_file is not None:\n"
+    "        if any(\n"
+    "            path == repo_root or repo_root in path.parents\n"
+    "            for path in (message_file, resolved_message_file)\n"
+    "        ):\n"
+    "            print(\n"
+    "                \"[specify] Error: message file must be outside the Git worktree\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1",
 )
 
 replace(

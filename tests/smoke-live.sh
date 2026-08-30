@@ -69,6 +69,12 @@ grep -Fq 'native argument array/binding' "$PROJECT/.agents/skills/speckit-git-fe
 grep -Fq 'blocking installation error' "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
 grep -Fq 'Numbering is per-project only' "$PROJECT/.specify/extensions/git/commands/speckit.git.feature.md"
 grep -Fq 'Caller owns and cleans up the transport file' "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+for script in \
+  "$PROJECT/.specify/extensions/git/scripts/bash/auto-commit.sh" \
+  "$PROJECT/.specify/extensions/git/scripts/powershell/auto-commit.ps1" \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"; do
+  grep -Fq 'message file must be outside the Git worktree' "$script"
+done
 grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
 grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
@@ -274,6 +280,22 @@ if python3 "$AUTO_COMMIT" after_specify >/dev/null 2>&1; then
 fi
 git -C "$GIT_PROBE" config user.name 'speckit-bootstrap CI'
 git -C "$GIT_PROBE" config user.email 'ci@example.invalid'
+printf 'chore: must not be committed\n' > "$GIT_PROBE/commit-message.txt"
+if python3 "$AUTO_COMMIT" after_specify --message-file "$GIT_PROBE/commit-message.txt" >/dev/null 2>&1; then
+  echo 'smoke-live: Python auto-commit accepted a worktree message file' >&2
+  exit 1
+fi
+[[ -e "$GIT_PROBE/commit-message.txt" ]]
+[[ -z "$(git -C "$GIT_PROBE" log --format=%s --grep='must not be committed')" ]]
+rm "$GIT_PROBE/commit-message.txt"
+printf 'chore: must not be committed by Bash\n' > "$GIT_PROBE/commit-message.txt"
+if "$GIT_PROBE/.specify/extensions/git/scripts/bash/auto-commit.sh" \
+  after_specify --message-file "$GIT_PROBE/commit-message.txt" >/dev/null 2>&1; then
+  echo 'smoke-live: Bash auto-commit accepted a worktree message file' >&2
+  exit 1
+fi
+[[ -e "$GIT_PROBE/commit-message.txt" ]]
+rm "$GIT_PROBE/commit-message.txt"
 printf 'chore: validate generated git guards\n' > "$SANDBOX/commit-message.txt"
 python3 "$AUTO_COMMIT" after_specify --message-file "$SANDBOX/commit-message.txt"
 [[ "$(git -C "$GIT_PROBE" log -1 --format=%s)" == 'chore: validate generated git guards' ]]

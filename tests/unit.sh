@@ -852,6 +852,7 @@ for marker in (
     "blocking installation error",
     "Numbering is per-project only",
     "Caller owns and cleans up the transport file",
+    "message file must be outside the Git worktree",
     "if args.json_mode",
     "failed to enumerate extensions",
     "Resolve-ContextPath -Root $ProjectRoot",
