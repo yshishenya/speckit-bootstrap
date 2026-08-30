@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.4"
+BOOTSTRAP_VERSION="0.9.5"
 
 usage() {
   cat <<'EOF'
@@ -2404,6 +2404,28 @@ replace(
     "                file=sys.stderr,\n"
     "            )\n"
     "            return 1",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n"
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message\n\n"
+    "    # Check if there are changes to commit",
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n\n"
+    "    # Check if there are changes to commit",
 )
 
 replace(

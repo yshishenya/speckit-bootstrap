@@ -6,6 +6,13 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.5] - 2026-08-30
+
+### Fixed
+
+- Migrate the exact `v0.9.4` intermediate Python auto-commit form so the
+  conventional-message guard runs once, after the clean-worktree short circuit.
+
 ## [0.9.4] - 2026-08-30
 
 ### Fixed
