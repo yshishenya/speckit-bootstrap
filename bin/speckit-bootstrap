@@ -2207,11 +2207,19 @@ replace(
     "            fi\n"
     "            _message_dir=\"$(CDPATH=\"\" cd \"$(dirname \"$_message_file\")\" && pwd -P)\"\n"
     "            _message_file=\"$_message_dir/$(basename \"$_message_file\")\"\n"
-    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"",
+    "            if ! command -v python3 >/dev/null 2>&1; then\n"
+    "                echo \"[specify] Error: python3 is required to validate --message-file\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            if ! _resolved_message_file=\"$(python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).resolve(strict=True))' \"$_message_file\")\"; then\n"
+    "                echo \"[specify] Error: cannot resolve message file '$_message_file'\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"",
 )
 replace(
     ".specify/extensions/git/scripts/bash/auto-commit.sh",
-    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"\n"
     "            # The message file is a transport-only artifact: its content is\n"
     "            # now captured above, so remove it immediately. Otherwise, if it\n"
     "            # was written inside the worktree, it would be picked up as an\n"
@@ -2219,7 +2227,7 @@ replace(
     "            # `git add .`, polluting the commit or defeating the no-changes\n"
     "            # short-circuit even when nothing else changed.\n"
     "            rm -f \"$_message_file\"",
-    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"\n"
     "            # Caller owns and cleans up the transport file; never delete it here.",
 )
 replace(
@@ -2233,12 +2241,14 @@ replace(
     "    exit 0\n"
     "fi\n\n"
     "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
-    "case \"${_message_file:-}\" in\n"
-    "    \"$_worktree_root\"|\"$_worktree_root\"/*)\n"
-    "        echo \"[specify] Error: message file must be outside the Git worktree\" >&2\n"
-    "        exit 1\n"
-    "        ;;\n"
-    "esac",
+    "for _message_path in \"${_message_file:-}\" \"${_resolved_message_file:-}\"; do\n"
+    "    case \"$_message_path\" in\n"
+    "        \"$_worktree_root\"|\"$_worktree_root\"/*)\n"
+    "            echo \"[specify] Error: message file must be outside the Git worktree\" >&2\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "done",
 )
 replace(
     ".specify/extensions/git/scripts/powershell/auto-commit.ps1",

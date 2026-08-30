@@ -296,6 +296,15 @@ if "$GIT_PROBE/.specify/extensions/git/scripts/bash/auto-commit.sh" \
 fi
 [[ -e "$GIT_PROBE/commit-message.txt" ]]
 rm "$GIT_PROBE/commit-message.txt"
+printf 'chore: must not follow a worktree symlink target\n' > "$GIT_PROBE/commit-message.txt"
+ln -s "$GIT_PROBE/commit-message.txt" "$SANDBOX/worktree-message-link.txt"
+if "$GIT_PROBE/.specify/extensions/git/scripts/bash/auto-commit.sh" \
+  after_specify --message-file "$SANDBOX/worktree-message-link.txt" >/dev/null 2>&1; then
+  echo 'smoke-live: Bash auto-commit accepted an external symlink into the worktree' >&2
+  exit 1
+fi
+[[ -e "$GIT_PROBE/commit-message.txt" ]]
+rm "$SANDBOX/worktree-message-link.txt" "$GIT_PROBE/commit-message.txt"
 printf 'chore: validate generated git guards\n' > "$SANDBOX/commit-message.txt"
 python3 "$AUTO_COMMIT" after_specify --message-file "$SANDBOX/commit-message.txt"
 [[ "$(git -C "$GIT_PROBE" log -1 --format=%s)" == 'chore: validate generated git guards' ]]
