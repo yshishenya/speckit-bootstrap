@@ -2940,6 +2940,18 @@ replace(
 )
 replace(
     ".specify/scripts/bash/common.sh",
+    "        else\n"
+    "            # Fallback: alphabetical directory order (no python3 available)\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+    "        else\n"
+    "            if [ -f \"$registry_file\" ]; then\n"
+    "                echo \"Error: Python 3 is required to read $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
     "\" 2>/dev/null); then\n"
     "                registry_parsed=true\n"
     "            fi\n"
@@ -2953,6 +2965,17 @@ replace(
     "            fi\n"
     "        fi\n"
     "        if [ \"$registry_parsed\" = false ]; then",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        if [ \"$registry_parsed\" = false ]; then\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+    "        if [ \"$registry_parsed\" = false ]; then\n"
+    "            if [ -f \"$registry_file\" ] && [ \"${#python_cmd[@]}\" -eq 0 ]; then\n"
+    "                echo \"Error: Python 3 is required to read $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "            for preset in \"$presets_dir\"/*/; do",
 )
 
 replace(

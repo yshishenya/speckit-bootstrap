@@ -404,6 +404,19 @@ Path(sys.argv[1]).write_text(
     encoding="utf-8",
 )
 PY
+if missing_python_output="$(
+  # shellcheck disable=SC1090,SC1091
+  source "$PRESET_PROBE/.specify/scripts/bash/common.sh"
+  # shellcheck disable=SC2329
+  _python3_command() { return 1; }
+  resolve_template spec-template "$PRESET_PROBE" 2>&1
+  )"; then
+  echo 'smoke-live: preset registry unexpectedly resolved without Python 3' >&2
+  exit 1
+fi
+grep -Fq \
+  "Error: Python 3 is required to read $PRESET_PROBE/.specify/presets/.registry" \
+  <<< "$missing_python_output"
 printf 'outside\n' > "$PRESET_PROBE/outside.md"
 ln -s "$PRESET_PROBE/outside.md" "$PRESET_PROBE/.specify/presets/example/templates/spec-template.md"
 if (
