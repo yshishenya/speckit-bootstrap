@@ -132,6 +132,28 @@ final_cleanup = (
     "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
     "            return 1"
 )
+conventional_block = (
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message\n"
+)
+final_conventional_anchor = (
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n\n"
+    "    # Check if there are changes to commit"
+)
+intermediate_conventional_anchor = final_conventional_anchor.replace(
+    "\n\n    # Check if there are changes to commit",
+    "\n" + conventional_block + "\n    # Check if there are changes to commit",
+)
 v091_cleanup = (
     "    event_name = argv[0]\n"
     "    generated_message = \"\"\n"
@@ -149,9 +171,14 @@ common_text = common.read_text(encoding="utf-8")
 auto_commit_text = auto_commit.read_text(encoding="utf-8")
 assert common_text.count(final_case) == 1
 assert auto_commit_text.count(final_cleanup) == 1
+assert auto_commit_text.count(conventional_block) == 1
+assert auto_commit_text.count(final_conventional_anchor) == 1
 common.write_text(common_text.replace(final_case, v091_case, 1), encoding="utf-8")
 auto_commit.write_text(
-    auto_commit_text.replace(final_cleanup, v091_cleanup, 1), encoding="utf-8"
+    auto_commit_text.replace(final_cleanup, v091_cleanup, 1).replace(
+        final_conventional_anchor, intermediate_conventional_anchor, 1
+    ),
+    encoding="utf-8",
 )
 PY
 (
@@ -164,6 +191,57 @@ PY
 grep -Fq '/*|..|../*|*/..|*/../*) manifest_file="" ;;' \
   "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq 'Caller owns and cleans up the transport file' \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+python3 - "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+block = '    commit_style = _read_commit_style(config_file)\n    if commit_style == "conventional":'
+assert text.count(block) == 1
+assert text.index("No changes to commit") < text.index(block)
+PY
+
+cp "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" \
+  "$SANDBOX/auto_commit.py.backup"
+python3 - "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+guard = (
+    "    commit_style = _read_commit_style(config_file)\n"
+    "    if commit_style == \"conventional\":\n"
+    "        if not generated_message:\n"
+    "            print(\n"
+    "                \"[specify] Error: commit_style is 'conventional' but no generated \"\n"
+    "                \"commit message was supplied; pass --message-file <path>\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1\n"
+    "        commit_msg = generated_message\n"
+)
+mixed = (
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n"
+    + guard
+    + "\n    # Check if there are changes to commit"
+)
+path.write_text(text + "\n" + mixed + "\n", encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: mixed Python conventional-guard forms were accepted' >&2
+  exit 1
+fi
+mv "$SANDBOX/auto_commit.py.backup" \
   "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
 
 cp "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" \
