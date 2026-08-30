@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.7"
+BOOTSTRAP_VERSION="0.9.8"
 
 usage() {
   cat <<'EOF'
@@ -1846,6 +1846,27 @@ def replace_chain(relative: str, *states: str) -> None:
     )
 
 
+def replace_variants(relative: str, *states: str) -> None:
+    path = required(relative)
+    text = pending.get(path, path.read_text(encoding="utf-8"))
+    final = states[-1]
+    final_count = text.count(final)
+    residual = text.replace(final, "", 1) if final_count == 1 else text
+    matches = [(state, residual.count(state)) for state in states[:-1]]
+    if final_count == 1 and sum(count for _state, count in matches) == 0:
+        return
+    if final_count != 0:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream artifact changed; migration variant is unknown in {relative}"
+        )
+    if sum(count for _state, count in matches) != 1:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream artifact changed; migration variant is unknown in {relative}"
+        )
+    old = next(state for state, count in matches if count == 1)
+    pending[path] = text.replace(old, final, 1)
+
+
 def replace_regex(relative: str, pattern: str, replacement: str) -> None:
     path = required(relative)
     text = pending.get(path, path.read_text(encoding="utf-8"))
@@ -1978,6 +1999,12 @@ replace(
     "privacy, auth, backend, infrastructure, deletion, diagnostics, and high-risk UX lanes MUST NOT skip clarify; "
     "STOP until the required clarification is complete.",
 )
+replace(
+    ".agents/skills/speckit-clarify/SKILL.md",
+    "       - Once satisfactory, record it in working memory (do not yet write to disk) and move to the next queued question.",
+    "       - Once satisfactory, immediately integrate the accepted answer and atomically save the spec as required by step 6; "
+    "only then move to the next queued question.",
+)
 
 replace(
     ".agents/skills/speckit-plan/SKILL.md",
@@ -1990,7 +2017,7 @@ replace(
     "4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:",
 )
 
-replace_chain(
+replace_variants(
     ".agents/skills/speckit-implement/SKILL.md",
     "   - **If any checklist has unchecked items**:\n"
     "     - Display the table with unchecked item counts\n"
@@ -2010,13 +2037,21 @@ replace_chain(
     "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
     "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
 )
-replace_chain(
+replace_variants(
     ".agents/skills/speckit-implement/SKILL.md",
     "3. Load and analyze the implementation context:",
     "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
     "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
     "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
     "4. Load and analyze the implementation context:",
+    "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
+    "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
+    "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
+    "`$speckit-taskstoissues`.\n\n"
+    "5. Load and analyze the implementation context:",
+    "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
+    "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
+    "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
     "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
     "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
     "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
@@ -2096,6 +2131,48 @@ replace(
     "   - The spec directory and file are always created by this command, never by the hook",
     "   - A missing spec directory/file is created by this command, never by the hook; an existing spec is updated in place and never overwritten by the template",
 )
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "       - **LIMIT: Maximum 3 [NEEDS CLARIFICATION] markers total**",
+    "       - Ask at most 3 initial clarification questions in this command. Preserve every additional material "
+    "ambiguity as a `[NEEDS CLARIFICATION: ...]` marker for `$speckit-clarify`; never replace a required user decision "
+    "with a guess to satisfy this question limit.",
+)
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "        2. **LIMIT CHECK**: If more than 3 markers exist, keep only the 3 most critical (by scope/security/UX impact) and make informed guesses for the rest",
+    "        2. **LIMIT CHECK**: If more than 3 markers exist, ask only the 3 most critical in this command and leave "
+    "every remaining marker unresolved for `$speckit-clarify`; do not guess or discard material decisions",
+)
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "    8. Return: SUCCESS (spec ready for planning)",
+    "    8. Return: SUCCESS only when validation passes; unresolved markers mean the spec is ready for "
+    "`$speckit-clarify`, not planning",
+)
+replace(
+    ".agents/skills/speckit-specify/SKILL.md",
+    "        9. Re-run validation after all clarifications are resolved",
+    "        9. Re-run validation; if markers remain, STOP and run `$speckit-clarify` instead of reporting the spec "
+    "ready for planning",
+)
+
+replace(
+    ".agents/skills/speckit-tasks/SKILL.md",
+    "3. **Execute task generation workflow**:",
+    "3. **Verify the checklist gate before task generation**: Determine the selected risk/validation lane from "
+    "`plan.md` and project guidance; treat a missing, unrecognized, or ambiguous lane as high-risk. For a high-risk "
+    "lane, identify every required custom checklist from project guidance, require each file to exist under "
+    "`FEATURE_DIR/checklists/`, and confirm its reviewer-owned items have no unchecked boxes. If required checklist "
+    "evidence is absent, stale, or incomplete, STOP and run `$speckit-checklist` or wait for reviewer completion. "
+    "Never create, check, or update reviewer checklist items in this command.\n\n"
+    "4. **Execute task generation workflow**:",
+)
+replace(
+    ".agents/skills/speckit-tasks/SKILL.md",
+    "4. **Generate tasks.md**:",
+    "5. **Generate tasks.md**:",
+)
 
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
@@ -2121,6 +2198,16 @@ replace_regex(
     "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task. Iterate each unique task ID "
     "once and add a successfully created ID to the covered set before processing the next task.\n"
     "   - **Skip**",
+)
+replace(
+    ".agents/skills/speckit-taskstoissues/SKILL.md",
+    "1. From the executed script, extract the path to **tasks**.\n1. Get the Git remote by running:",
+    "1. From the executed script, extract the path to **tasks**.\n"
+    "1. **Verify the analyze gate before external issue sync**: Confirm `$speckit-analyze` ran after the current "
+    "`tasks.md` and met the feature threshold (default: no unresolved critical/high findings and no blocking "
+    "clarification requests). If current evidence is absent or stale, STOP and run `$speckit-analyze`; do not read or "
+    "create GitHub issues yet.\n"
+    "1. Get the Git remote by running:",
 )
 
 replace(
@@ -2818,6 +2905,153 @@ replace(
     "fi\n\n"
     "# Source common functions\n",
     count=1,
+)
+
+replace_variants(
+    ".specify/extensions/git/scripts/bash/create-new-feature-branch.sh",
+    "    local feature_segment\n"
+    "    feature_segment=\"${template##*/}\"\n"
+    "    case \"$template\" in",
+    "    local feature_segment\n"
+    "    local unsupported_tokens=\"$template\"\n"
+    "    case \"$template\" in\n"
+    "        *'${author}'*|*'${app}'*|*'${number}'*|*'${slug}'*|\\\n"
+    "        *'$author'*|*'$app'*|*'$number'*|*'$slug'*)\n"
+    "            >&2 echo \"Error: branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{author\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{app\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{number\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{slug\\}/}\n"
+    "    case \"$unsupported_tokens\" in\n"
+    "        *\"{\"*|*\"}\"*)\n"
+    "            >&2 echo \"Error: branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    feature_segment=\"${template##*/}\"\n"
+    "    case \"$template\" in",
+    "    local feature_segment\n"
+    "    local unsupported_tokens=\"$template\"\n"
+    "    case \"$template\" in\n"
+    "        *'${author}'*|*'${app}'*|*'${number}'*|*'${slug}'*)\n"
+    "            >&2 echo \"Error: branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{author\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{app\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{number\\}/}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{slug\\}/}\n"
+    "    case \"$unsupported_tokens\" in\n"
+    "        *\"{\"*|*\"}\"*)\n"
+    "            >&2 echo \"Error: branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    feature_segment=\"${template##*/}\"\n"
+    "    case \"$template\" in",
+    "    local feature_segment\n"
+    "    local unsupported_tokens=\"$template\"\n"
+    "    case \"$template\" in\n"
+    "        *'$'*)\n"
+    "            >&2 echo \"Error: branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{author\\}/_}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{app\\}/_}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{number\\}/_}\n"
+    "    unsupported_tokens=${unsupported_tokens//\\{slug\\}/_}\n"
+    "    case \"$unsupported_tokens\" in\n"
+    "        *\"{\"*|*\"}\"*)\n"
+    "            >&2 echo \"Error: branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "    feature_segment=\"${template##*/}\"\n"
+    "    case \"$template\" in",
+)
+
+replace_variants(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "    if not template:\n"
+    "        return\n"
+    "    if \"{number}\" not in template:",
+    "    if not template:\n"
+    "        return\n"
+    "    shell_tokens = (\n"
+    "        \"${author}\", \"${app}\", \"${number}\", \"${slug}\",\n"
+    "        \"$author\", \"$app\", \"$number\", \"$slug\",\n"
+    "    )\n"
+    "    if any(token in template for token in shell_tokens):\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains a shell-style placeholder. Use \"\n"
+    "            \"{author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    unsupported_tokens = template\n"
+    "    for token in (\"{author}\", \"{app}\", \"{number}\", \"{slug}\"):\n"
+    "        unsupported_tokens = unsupported_tokens.replace(token, \"\")\n"
+    "    if \"{\" in unsupported_tokens or \"}\" in unsupported_tokens:\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains an unsupported or malformed placeholder. \"\n"
+    "            \"Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    if \"{number}\" not in template:",
+    "    if not template:\n"
+    "        return\n"
+    "    if \"$\" in template:\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains a shell-style placeholder. Use \"\n"
+    "            \"{author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    unsupported_tokens = template\n"
+    "    for token in (\"{author}\", \"{app}\", \"{number}\", \"{slug}\"):\n"
+    "        unsupported_tokens = unsupported_tokens.replace(token, \"_\")\n"
+    "    if \"{\" in unsupported_tokens or \"}\" in unsupported_tokens:\n"
+    "        _err(\n"
+    "            \"Error: branch_template contains an unsupported or malformed placeholder. \"\n"
+    "            \"Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "        )\n"
+    "        raise SystemExit(1)\n"
+    "    if \"{number}\" not in template:",
+)
+
+replace_variants(
+    ".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1",
+    "    if ($Template -and -not $Template.Contains('{number}')) {",
+    "    if (-not $Template) { return }\n\n"
+    "    $shellTokens = @('${author}', '${app}', '${number}', '${slug}', '$author', '$app', '$number', '$slug')\n"
+    "    foreach ($token in $shellTokens) {\n"
+    "        if ($Template.Contains($token)) {\n"
+    "            throw \"branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "        }\n"
+    "    }\n"
+    "    $unsupportedTokens = $Template\n"
+    "    foreach ($token in @('{author}', '{app}', '{number}', '{slug}')) {\n"
+    "        $unsupportedTokens = $unsupportedTokens.Replace($token, '')\n"
+    "    }\n"
+    "    if ($unsupportedTokens.Contains('{') -or $unsupportedTokens.Contains('}')) {\n"
+    "        throw \"branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "    }\n"
+    "    if (-not $Template.Contains('{number}')) {",
+    "    if (-not $Template) { return }\n\n"
+    "    if ($Template.Contains('$')) {\n"
+    "        throw \"branch_template contains a shell-style placeholder. Use {author}, {app}, {number}, and {slug} without a dollar sign.\"\n"
+    "    }\n"
+    "    $unsupportedTokens = $Template\n"
+    "    foreach ($token in @('{author}', '{app}', '{number}', '{slug}')) {\n"
+    "        $unsupportedTokens = $unsupportedTokens.Replace($token, '_')\n"
+    "    }\n"
+    "    if ($unsupportedTokens.Contains('{') -or $unsupportedTokens.Contains('}')) {\n"
+    "        throw \"branch_template contains an unsupported or malformed placeholder. Allowed tokens: {author}, {app}, {number}, {slug}.\"\n"
+    "    }\n"
+    "    if (-not $Template.Contains('{number}')) {",
 )
 
 replace(
