@@ -4,8 +4,20 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [0.9.1] - 2026-08-30
+
+### Changed
+
+- Require explicit canonical task ownership when deduplicating issues, reconcile
+  closed issue matches, and sync convergence-appended tasks before implementation.
+
 ### Fixed
 
+- Validate every extension-registry entry fail-closed, probe PowerShell Git state
+  in the resolved override root, and disable bytecode before dynamically loading
+  managed Python helpers.
 - Retry immutable release verification for up to 40 seconds while GitHub
   finishes publishing release attestations.
 

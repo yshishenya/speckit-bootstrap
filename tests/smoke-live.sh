@@ -58,6 +58,91 @@ grep -Fq 'STOP with a blocking configuration error' "$PROJECT/.agents/skills/spe
 grep -Fq 'existing project files remain unstaged for review' "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
 grep -Fq "commit_style is 'conventional'" "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
 grep -Fq 'unresolvable file' "$PROJECT/.specify/scripts/bash/common.sh"
+grep -Fq 'Spec Kit task IDs: T001, T002' "$PROJECT/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq "run \`\$speckit-taskstoissues\` first" "$PROJECT/.agents/skills/speckit-converge/SKILL.md"
+grep -Fq "Push-Location \$repoRoot" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
+grep -Fq 'sys.dont_write_bytecode = True' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+
+REGISTRY="$PROJECT/.specify/extensions/.registry"
+REGISTRY_BACKUP="$SANDBOX/extension-registry.json"
+cp -p "$REGISTRY" "$REGISTRY_BACKUP"
+python3 - "$REGISTRY" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = json.loads(path.read_text(encoding="utf-8"))
+data["extensions"]["git"]["enabled"] = "false"
+path.write_text(json.dumps(data), encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$PROJECT/.specify/scripts/bash/common.sh"
+  _sorted_extension_ids "$PROJECT/.specify/extensions"
+) >/dev/null 2>&1; then
+  echo 'smoke-live: malformed extension registry metadata was accepted' >&2
+  exit 1
+fi
+mv "$REGISTRY_BACKUP" "$REGISTRY"
+
+BRANCH_SCRIPT="$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+CORE_HELPER="$PROJECT/.specify/scripts/python/common.py"
+mkdir -p "$(dirname "$CORE_HELPER")"
+python3 - "$CORE_HELPER" "$PROJECT" <<'PY'
+import sys
+from pathlib import Path
+
+Path(sys.argv[1]).write_text(
+    "from pathlib import Path\n\n"
+    f"def get_repo_root(script_file=None):\n    return Path({sys.argv[2]!r})\n",
+    encoding="utf-8",
+)
+PY
+python3 "$BRANCH_SCRIPT" --dry-run --number 999 --short-name bytecode-probe 'bytecode probe' >/dev/null
+if find "$PROJECT/.specify/scripts/python" -type d -name __pycache__ -print -quit | grep -q .; then
+  echo 'smoke-live: feature-branch helper wrote bytecode into the managed tree' >&2
+  exit 1
+fi
+rm -f "$CORE_HELPER"
+rmdir "$(dirname "$CORE_HELPER")"
+
+UPGRADE_PROBE="$SANDBOX/upgrade-probe"
+mkdir -p "$UPGRADE_PROBE"
+cp -R "$PROJECT/.agents" "$UPGRADE_PROBE/.agents"
+cp -R "$PROJECT/.specify" "$UPGRADE_PROBE/.specify"
+python3 - "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+current = (
+    "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
+    "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
+    "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
+    "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
+    "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
+    "create a duplicate while a closed match is unresolved. Stop paginating only when every task has an open owner "
+    "or a reconciled closed owner, or when there are no more pages."
+)
+previous = (
+    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
+    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
+    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
+    "prevents duplicates without fetching the whole issue history once all task IDs are matched."
+)
+assert current in text
+path.write_text(text.replace(current, previous), encoding="utf-8")
+PY
+(
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$UPGRADE_PROBE"
+  ensure_governed_generated_artifacts
+) >/dev/null
+grep -Fq 'Spec Kit task IDs: T001, T002' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
 
 HARDENING_PROBE="$SANDBOX/hardening-probe"
 mkdir -p "$HARDENING_PROBE"

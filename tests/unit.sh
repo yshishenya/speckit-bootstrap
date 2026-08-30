@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.1" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -840,6 +840,11 @@ for marker in (
     "existing project files remain unstaged for review",
     "upstream mandatory hook guard changed",
     "updated.count(mandatory_hook_guard) == 0",
+    "Spec Kit task IDs: T001, T002",
+    "run `$speckit-taskstoissues` first",
+    "registry_invalid: enabled for {ext_id} must be boolean",
+    "Push-Location $repoRoot",
+    "sys.dont_write_bytecode = True",
     "pending.items()",
 ):
     assert marker in text, marker
