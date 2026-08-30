@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.1" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.2" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -845,6 +845,16 @@ for marker in (
     "registry_invalid: enabled for {ext_id} must be boolean",
     "Push-Location $repoRoot",
     "sys.dont_write_bytecode = True",
+    "Load minimal question context",
+    "Never remove an existing checklist",
+    "never auto-committed",
+    "native argument array/binding",
+    "blocking installation error",
+    "Numbering is per-project only",
+    "Caller owns and cleans up the transport file",
+    "if args.json_mode",
+    "failed to enumerate extensions",
+    "Resolve-ContextPath -Root $ProjectRoot",
     "pending.items()",
 ):
     assert marker in text, marker

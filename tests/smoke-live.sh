@@ -62,6 +62,20 @@ grep -Fq 'Spec Kit task IDs: T001, T002' "$PROJECT/.agents/skills/speckit-taskst
 grep -Fq "run \`\$speckit-taskstoissues\` first" "$PROJECT/.agents/skills/speckit-converge/SKILL.md"
 grep -Fq "Push-Location \$repoRoot" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
 grep -Fq 'sys.dont_write_bytecode = True' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq 'Load minimal question context' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
+grep -Fq 'Never remove an existing checklist' "$PROJECT/.agents/skills/speckit-checklist/SKILL.md"
+grep -Fq 'never auto-committed' "$PROJECT/.agents/skills/speckit-git-commit/SKILL.md"
+grep -Fq 'native argument array/binding' "$PROJECT/.agents/skills/speckit-git-feature/SKILL.md"
+grep -Fq 'blocking installation error' "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md"
+grep -Fq 'Numbering is per-project only' "$PROJECT/.specify/extensions/git/commands/speckit.git.feature.md"
+grep -Fq 'Caller owns and cleans up the transport file' "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
+grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
+if rg -q 'skip hook checking silently' "$PROJECT/.agents/skills"/speckit-*/SKILL.md; then
+  echo 'smoke-live: a generated post-hook still fails open on malformed YAML' >&2
+  exit 1
+fi
 
 REGISTRY="$PROJECT/.specify/extensions/.registry"
 REGISTRY_BACKUP="$SANDBOX/extension-registry.json"
@@ -263,7 +277,8 @@ git -C "$GIT_PROBE" config user.email 'ci@example.invalid'
 printf 'chore: validate generated git guards\n' > "$SANDBOX/commit-message.txt"
 python3 "$AUTO_COMMIT" after_specify --message-file "$SANDBOX/commit-message.txt"
 [[ "$(git -C "$GIT_PROBE" log -1 --format=%s)" == 'chore: validate generated git guards' ]]
-[[ ! -e "$SANDBOX/commit-message.txt" ]]
+[[ -e "$SANDBOX/commit-message.txt" ]]
+python3 "$AUTO_COMMIT" after_specify
 
 if "$PROJECT/.specify/scripts/bash/check-prerequisites.sh" \
   --json --paths-only --template spec-template >/dev/null 2>&1; then
