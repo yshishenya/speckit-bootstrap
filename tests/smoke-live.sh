@@ -336,6 +336,8 @@ for script in \
   grep -Fq 'message file must be outside the Git worktree' "$script"
 done
 grep -Fq 'if args.json_mode' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq 'unsupported_tokens = template' "$PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+grep -Fq "\$unsupportedTokens = \$Template" "$PROJECT/.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1"
 grep -Fq 'failed to enumerate extensions' "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq "\$linksResolved -gt 40" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
@@ -546,7 +548,9 @@ UPGRADE_PROBE="$SANDBOX/upgrade-probe"
 mkdir -p "$UPGRADE_PROBE"
 cp -R "$PROJECT/.agents" "$UPGRADE_PROBE/.agents"
 cp -R "$PROJECT/.specify" "$UPGRADE_PROBE/.specify"
-python3 - "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md" <<'PY'
+python3 - \
+  "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md" \
+  "$UPGRADE_PROBE/.agents/skills/speckit-implement/SKILL.md" <<'PY'
 import sys
 from pathlib import Path
 
@@ -573,6 +577,28 @@ previous = (
 )
 assert current in text
 path.write_text(text.replace(current, previous), encoding="utf-8")
+
+implement = Path(sys.argv[2])
+text = implement.read_text(encoding="utf-8")
+final = (
+    "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
+    "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
+    "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
+    "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
+    "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
+    "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
+    "`$speckit-taskstoissues`.\n\n"
+    "5. Load and analyze the implementation context:"
+)
+previous = (
+    "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
+    "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
+    "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
+    "`$speckit-taskstoissues`.\n\n"
+    "5. Load and analyze the implementation context:"
+)
+assert final in text
+implement.write_text(text.replace(final, previous), encoding="utf-8")
 PY
 (
   # shellcheck disable=SC1090,SC1091
@@ -583,6 +609,8 @@ PY
 ) >/dev/null
 grep -Fq 'Spec Kit task IDs: T001, T002' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
 grep -Fq 'Deduplicate the task IDs before processing them' "$UPGRADE_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq 'Verify the analyze gate before implementation' "$UPGRADE_PROBE/.agents/skills/speckit-implement/SKILL.md"
+grep -Fq 'Verify the issue-sync gate before implementation' "$UPGRADE_PROBE/.agents/skills/speckit-implement/SKILL.md"
 
 HARDENING_PROBE="$SANDBOX/hardening-probe"
 mkdir -p "$HARDENING_PROBE"
@@ -595,6 +623,92 @@ cp -R "$PROJECT/.specify" "$HARDENING_PROBE/.specify"
   PROJECT_DIR="$HARDENING_PROBE"
   ensure_governed_generated_artifacts
 ) >/dev/null
+grep -Fq 'immediately integrate the accepted answer' \
+  "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md"
+grep -Fq 'Verify the checklist gate before task generation' \
+  "$HARDENING_PROBE/.agents/skills/speckit-tasks/SKILL.md"
+grep -Fq 'Verify the analyze gate before external issue sync' \
+  "$HARDENING_PROBE/.agents/skills/speckit-taskstoissues/SKILL.md"
+grep -Fq 'do not guess or discard material decisions' \
+  "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md"
+python3 - "$HARDENING_PROBE/.agents/skills/speckit-specify/SKILL.md" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+assert "ready for `$speckit-clarify`, not planning" in text
+PY
+
+BRANCH_ERROR="$SANDBOX/unsupported-branch-template.txt"
+for invalid_template in \
+  'features/{number}-{slgu}' \
+  'features/{slug{author}}/{number}-{slug}'; do
+  printf 'branch_template: %s\n' "$invalid_template" > \
+    "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
+  if (
+    cd "$HARDENING_PROBE"
+    bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+      --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: unsupported branch-template placeholder was accepted' >&2
+    exit 1
+  fi
+  grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+  if (
+    cd "$HARDENING_PROBE"
+    python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+      --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: Python accepted an unsupported branch-template placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+  if command -v pwsh >/dev/null 2>&1; then
+    if (
+      cd "$HARDENING_PROBE"
+      pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+        -DryRun -Number 999 -ShortName placeholder-probe 'placeholder probe'
+    ) >"$BRANCH_ERROR" 2>&1; then
+      echo 'smoke-live: PowerShell accepted an unsupported branch-template placeholder' >&2
+      exit 1
+    fi
+    grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+  fi
+done
+DOLLAR='$'
+for shell_placeholder in "${DOLLAR}{author}" "${DOLLAR}slgu" "${DOLLAR}1" "${DOLLAR}?"; do
+  printf 'branch_template: %s\n' "features/${shell_placeholder}/{number}-{slug}" > \
+    "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
+  if (
+    cd "$HARDENING_PROBE"
+    bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+      --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: dollar-style branch-template placeholder was accepted' >&2
+    exit 1
+  fi
+  grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+  if (
+    cd "$HARDENING_PROBE"
+    python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+      --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: Python accepted a dollar-style placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+  if command -v pwsh >/dev/null 2>&1; then
+    if (
+      cd "$HARDENING_PROBE"
+      pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+        -DryRun -Number 999 -ShortName shell-placeholder-probe 'shell placeholder probe'
+    ) >"$BRANCH_ERROR" 2>&1; then
+      echo 'smoke-live: PowerShell accepted a dollar-style placeholder' >&2
+      exit 1
+    fi
+    grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+  fi
+done
 python3 - \
   "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" \
   "$HARDENING_PROBE/.specify/templates/checklist-template.md" <<'PY'

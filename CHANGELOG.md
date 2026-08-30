@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.8] - 2026-08-31
+
+### Fixed
+
+- Preserve the analyze gate when the issue-sync gate is added to generated
+  implementation guidance.
+- Require reviewer-complete high-risk checklists before task generation and a
+  current clean analysis before external issue synchronization.
+- Save each accepted clarification before asking the next question and retain
+  material ambiguities beyond the initial question limit.
+- Reject unsupported or malformed branch-template placeholders before creating
+  a Git branch.
+
 ## [0.9.7] - 2026-08-30
 
 ### Fixed
