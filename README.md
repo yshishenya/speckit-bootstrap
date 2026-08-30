@@ -51,13 +51,13 @@ speckit-bootstrap .
 ## Quick start
 
 You need macOS or Ubuntu with `git`, `curl`, `python3`, and
-[`uv`](https://docs.astral.sh/uv/). The `codex` CLI is needed only for the
-optional Ponytail setup.
+[`uv`](https://docs.astral.sh/uv/). The `codex` CLI is required unless Ponytail
+is explicitly disabled.
 
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh | bash
 ```
 
 The first-stage installer comes from the immutable release tag. It resolves the
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.8/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.8 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.9 bash
 ```
 
 > [!TIP]
@@ -125,7 +125,7 @@ speckit-bootstrap . --doctor
 ```
 
 `--doctor` is read-only. It checks the installed CLI source, locked workflow,
-extension payloads, optional Ponytail state, project guidance, and every
+extension payloads, Ponytail state, project guidance, and every
 project-local skill digest. A healthy installation reports
 `speckit-bootstrap: doctor OK`.
 
@@ -147,9 +147,10 @@ project-local skill digest. A healthy installation reports
   [`github-issue-canon`](https://github.com/yshishenya/spec-kit-ext-github-issue-canon)
   installs structured issue forms, a pull request template, validation hooks,
   and closeout rules.
-- **Optional Ponytail integration.** With `--with-ponytail`, Codex owns the
-  [`Ponytail`](https://github.com/DietrichGebert/ponytail) plugin lifecycle while
-  bootstrap pins its source and keeps project guidance current.
+- **Ponytail by default.** Bootstrap installs the latest release of the
+  [`Ponytail`](https://github.com/DietrichGebert/ponytail) Codex plugin, pins its
+  immutable source, and keeps project guidance current. Use `--skip-ponytail` or
+  `SPECKIT_PONYTAIL=0` for an explicit opt-out.
 - **Respect for user-owned state.** Existing catalogs, unrelated skills,
   guidance, and GitHub templates are preserved.
 - **Fail-closed validation.** Version drift, checksum drift, missing managed
@@ -183,7 +184,7 @@ The default non-frozen run intentionally starts from current stable releases:
 1. Resolve the latest approved release tags.
 2. Resolve each tag to an immutable commit.
 3. Install and validate the immutable workflow, extensions, project skills,
-   and the optional plugin.
+   and the latest Ponytail plugin.
 4. Record exact sources and payload digests in
    `.specify/speckit-bootstrap.lock.json`.
 5. Verify the completed installation before reporting success.
@@ -293,15 +294,15 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 
 | Option | Effect |
 | --- | --- |
-| `--doctor` | Verify locked project state and optional Ponytail state without changing it |
+| `--doctor` | Verify locked project state and Ponytail state without changing it |
 | `--dry-run` | Resolve inputs and print the mutation plan only |
 | `--version` | Print the bootstrap version and exit |
 | `--frozen` | Use and verify versions from the project lock |
 | `--json` | Reserve stdout for one machine-readable result |
 | `--keep-local-skills` | Deprecated no-op; project-local skills are always kept |
 | `--skip-cli-update` | Use the currently installed `specify` CLI |
-| `--skip-ponytail` | Force Ponytail off when enabled by the environment |
-| `--with-ponytail` | Install/update Ponytail plugin and project guidance |
+| `--skip-ponytail` | Disable the default Ponytail plugin and guidance update |
+| `--with-ponytail` | Explicitly enable Ponytail (kept for compatibility) |
 | `-h`, `--help` | Show complete command help |
 
 Useful recipes:
@@ -316,8 +317,8 @@ SPEC_KIT_VERSION=vX.Y.Z speckit-bootstrap .
 # Keep refresh-only install metadata visible for an audit or release.
 SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 
-# Explicitly enable the user-level Ponytail integration.
-speckit-bootstrap . --with-ponytail
+# Explicitly disable the default user-level Ponytail integration.
+speckit-bootstrap . --skip-ponytail
 ```
 
 ### Environment variables
@@ -329,7 +330,7 @@ speckit-bootstrap . --with-ponytail
 | `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Pin the issue-canon release tag |
 | `SPECKIT_GITHUB_ISSUE_CANON_URL` | Use an explicitly reviewed custom ZIP |
 | `SPECKIT_PONYTAIL_VERSION` | Pin the Ponytail release tag |
-| `SPECKIT_PONYTAIL=1` | Enable Ponytail plugin and guidance operations |
+| `SPECKIT_PONYTAIL=0` | Disable the default Ponytail plugin and guidance operations |
 | `SPECKIT_TRACK_INSTALL_METADATA=1` | Expose refresh-only metadata in Git diffs |
 | `SPECKIT_BOOTSTRAP_INSTALL_DIR` | Installer target; defaults to `~/.local/bin` |
 | `SPECKIT_BOOTSTRAP_VERSION` | Bootstrap release tag; defaults to `latest` |

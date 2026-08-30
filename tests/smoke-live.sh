@@ -40,6 +40,8 @@ git -C "$PROJECT" add README.md
 git -C "$PROJECT" commit -qm 'Initialize smoke fixture'
 
 export SPEC_KIT_VERSION SPECKIT_GITHUB_ISSUE_CANON_VERSION
+# Keep live smoke isolated from the developer's Codex plugin state; production
+# bootstrap runs enable Ponytail by default unless this explicit opt-out is set.
 export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
 
 "$BOOTSTRAP" "$PROJECT"

@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.8" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.9" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -106,7 +106,9 @@ test_pinned_issue_canon_uses_tagged_catalog() (
   FROZEN=0
   SKIP_CLI_UPDATE=0
   SKIP_PONYTAIL=1
+  # shellcheck disable=SC2030
   export GITHUB_ISSUE_CANON_EXTENSION_URL=""
+  # shellcheck disable=SC2030
   export SPECKIT_GITHUB_ISSUE_CANON_VERSION="v0.3.1"
   unset SPECKIT_EXTENSION_CATALOG_URL
 
@@ -584,20 +586,80 @@ test_frozen_skip_cli_update_requires_locked_commit() (
   install_cli
 )
 
-test_ponytail_is_opt_in() (
-  local sandbox="$TEST_ROOT/ponytail-opt-in"
+test_ponytail_defaults_enabled_with_explicit_opt_out() (
+  local sandbox="$TEST_ROOT/ponytail-default"
   mkdir -p "$sandbox"
 
   PROJECT_DIR=""
-  SKIP_PONYTAIL=1
+  SKIP_PONYTAIL=0
   unset SPECKIT_PONYTAIL
   parse_args "$sandbox"
+  [[ "$SKIP_PONYTAIL" -eq 0 ]] || return 1
+
+  PROJECT_DIR=""
+  SKIP_PONYTAIL=0
+  export SPECKIT_PONYTAIL=0
+  parse_args "$sandbox"
+  [[ "$SKIP_PONYTAIL" -eq 1 ]] || return 1
+
+  PROJECT_DIR=""
+  SKIP_PONYTAIL=0
+  unset SPECKIT_PONYTAIL
+  parse_args "$sandbox" --skip-ponytail
   [[ "$SKIP_PONYTAIL" -eq 1 ]] || return 1
 
   PROJECT_DIR=""
   SKIP_PONYTAIL=1
   parse_args "$sandbox" --with-ponytail
   [[ "$SKIP_PONYTAIL" -eq 0 ]]
+)
+
+test_ponytail_defaults_to_latest_release_tag() (
+  local sandbox="$TEST_ROOT/ponytail-latest"
+  local spec_ref canon_ref ponytail_ref
+  spec_ref="$(printf 'a%.0s' {1..40})"
+  canon_ref="$(printf 'b%.0s' {1..40})"
+  ponytail_ref="$(printf 'c%.0s' {1..40})"
+  mkdir -p "$sandbox/project"
+
+  PROJECT_DIR="$sandbox/project"
+  FROZEN=0
+  SKIP_CLI_UPDATE=0
+  SKIP_PONYTAIL=0
+  unset SPECKIT_PONYTAIL SPECKIT_PONYTAIL_VERSION SPECKIT_EXTENSION_CATALOG_URL
+  # shellcheck disable=SC2030,SC2031
+  export GITHUB_ISSUE_CANON_EXTENSION_URL=""
+  # shellcheck disable=SC2030,SC2031
+  export SPECKIT_GITHUB_ISSUE_CANON_VERSION="v0.3.1"
+
+  # shellcheck disable=SC2317,SC2329
+  resolve_spec_kit_version() { printf 'v1.0.1\n'; }
+  # shellcheck disable=SC2317,SC2329
+  resolve_latest_tag() {
+    [[ "$1" == "https://github.com/DietrichGebert/ponytail.git" ]] || return 1
+    printf 'v4.9.0\n'
+  }
+  # shellcheck disable=SC2317,SC2329
+  resolve_tag_commit() {
+    case "$1" in
+      https://github.com/github/spec-kit.git) printf '%s\n' "$spec_ref" ;;
+      https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git) printf '%s\n' "$canon_ref" ;;
+      https://github.com/DietrichGebert/ponytail.git) printf '%s\n' "$ponytail_ref" ;;
+      *) return 1 ;;
+    esac
+  }
+  # shellcheck disable=SC2317,SC2329
+  require_remote_tag() { :; }
+  # shellcheck disable=SC2317,SC2329
+  resolve_issue_canon_catalog_entry() {
+    printf 'v0.3.1\thttps://example.test/github-issue-canon-v0.3.1.zip\t%s\n' \
+      "$(printf 'd%.0s' {1..64})"
+  }
+
+  prepare_versions
+
+  [[ "$RESOLVED_PONYTAIL_VERSION" == "v4.9.0" ]] || return 1
+  [[ "$RESOLVED_PONYTAIL_REF" == "$ponytail_ref" ]]
 )
 
 test_ponytail_marketplace_path_is_canonical() (
@@ -879,7 +941,7 @@ for marker in (
 PY
 }
 
-printf '1..27\n'
+printf '1..28\n'
 run_test 'version and sourceability' test_version_and_sourceability
 run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
@@ -897,7 +959,8 @@ run_test 'frozen lock stays immutable when Ponytail is skipped' test_frozen_lock
 run_test 'extension tree integrity detects payload tampering' test_extension_tree_integrity_detects_payload_tampering
 run_test 'matching CLI skips force reinstall' test_matching_cli_skips_force_reinstall
 run_test 'frozen skipped CLI requires the locked commit' test_frozen_skip_cli_update_requires_locked_commit
-run_test 'Ponytail is opt-in' test_ponytail_is_opt_in
+run_test 'Ponytail defaults enabled with explicit opt-out' test_ponytail_defaults_enabled_with_explicit_opt_out
+run_test 'Ponytail defaults to latest release tag' test_ponytail_defaults_to_latest_release_tag
 run_test 'Ponytail marketplace path is canonical' test_ponytail_marketplace_path_is_canonical
 run_test 'JSON mode keeps stdout machine-readable' test_json_mode_keeps_stdout_machine_readable
 run_test 'release publish job does not execute repository code' test_release_publish_job_does_not_execute_repository_code

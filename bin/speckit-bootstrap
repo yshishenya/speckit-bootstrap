@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.8"
+BOOTSTRAP_VERSION="0.9.9"
 
 usage() {
   cat <<'EOF'
@@ -13,7 +13,7 @@ Bootstraps GitHub Spec Kit for Codex in one command:
   - installs official core workflow and extensions
   - configures safe git auto-commit defaults for Spec Kit doc stages
   - keeps generated speckit-* skills project-local in .agents/skills
-  - optionally installs/updates the Ponytail Codex plugin and project guidance
+  - installs/updates the latest Ponytail Codex plugin and project guidance
 
 Modes:
   --doctor                  Verify the current installation without changing it.
@@ -43,14 +43,14 @@ Environment:
   SPECKIT_TRACK_INSTALL_METADATA=1
                             Keep Spec Kit install/version metadata visible in git.
                             Default: hide refresh-only metadata with skip-worktree.
-  SPECKIT_PONYTAIL=1        Install/update Ponytail plugin and AGENTS.md guidance.
-                            Default: disabled; manage user plugins separately.
+  SPECKIT_PONYTAIL=0        Disable Ponytail plugin and AGENTS.md guidance.
+                            Default: enabled; use this for an explicit opt-out.
 EOF
 }
 
 PROJECT_DIR=""
 SKIP_CLI_UPDATE=0
-SKIP_PONYTAIL=1
+SKIP_PONYTAIL=0
 MODE="apply"
 DRY_RUN=0
 FROZEN=0
@@ -96,7 +96,10 @@ INSTALL_METADATA_PATHS=(
 )
 
 parse_args() {
-  case "${SPECKIT_PONYTAIL:-0}" in
+  case "${SPECKIT_PONYTAIL:-1}" in
+    0|false|False|FALSE|no|No|NO|off|Off|OFF)
+      SKIP_PONYTAIL=1
+      ;;
     1|true|True|TRUE|yes|Yes|YES|on|On|ON)
       SKIP_PONYTAIL=0
       ;;
@@ -3896,7 +3899,7 @@ PY
     echo "  github-issue-canon archive sha256: $RESOLVED_ISSUE_CANON_ARCHIVE_SHA256"
   echo "  Ponytail: $ponytail"
   [[ "$SKIP_PONYTAIL" -eq 1 ]] || echo "  Ponytail ref: $RESOLVED_PONYTAIL_REF"
-  echo "  mutations: project .specify/.agents/AGENTS.md/.github, user extension catalog, optional Ponytail plugin"
+  echo "  mutations: project .specify/.agents/AGENTS.md/.github, user extension catalog, Ponytail plugin"
 }
 
 verify_bootstrap() {

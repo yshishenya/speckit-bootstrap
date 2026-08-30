@@ -6,6 +6,15 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.9] - 2026-08-31
+
+### Изменено
+
+- Ponytail включён по умолчанию: при каждом обычном запуске bootstrap
+  разрешается последний release-тег `v*` (сейчас `v4.9.0`).
+- `--skip-ponytail` и `SPECKIT_PONYTAIL=0` остаются явным отказом; опция
+  `--with-ponytail` сохранена для совместимости.
+
 ## [0.9.8] - 2026-08-31
 
 ### Fixed
