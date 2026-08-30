@@ -639,81 +639,76 @@ text = Path(sys.argv[1]).read_text(encoding="utf-8")
 assert "ready for `$speckit-clarify`, not planning" in text
 PY
 
-printf 'branch_template: features/{number}-{slgu}\n' > \
-  "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
 BRANCH_ERROR="$SANDBOX/unsupported-branch-template.txt"
-if (
-  cd "$HARDENING_PROBE"
-  bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
-    --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
-) >"$BRANCH_ERROR" 2>&1; then
-  echo 'smoke-live: unsupported branch-template placeholder was accepted' >&2
-  exit 1
-fi
-grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
-if (
-  cd "$HARDENING_PROBE"
-  python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
-    --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
-) >"$BRANCH_ERROR" 2>&1; then
-  echo 'smoke-live: Python accepted an unsupported branch-template placeholder' >&2
-  exit 1
-fi
-grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
-if command -v pwsh >/dev/null 2>&1; then
+for invalid_template in \
+  'features/{number}-{slgu}' \
+  'features/{slug{author}}/{number}-{slug}'; do
+  printf 'branch_template: %s\n' "$invalid_template" > \
+    "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
   if (
     cd "$HARDENING_PROBE"
-    pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
-      -DryRun -Number 999 -ShortName placeholder-probe 'placeholder probe'
+    bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+      --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
   ) >"$BRANCH_ERROR" 2>&1; then
-    echo 'smoke-live: PowerShell accepted an unsupported branch-template placeholder' >&2
+    echo 'smoke-live: unsupported branch-template placeholder was accepted' >&2
     exit 1
   fi
   grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
-fi
-DOLLAR='$'
-printf 'branch_template: %s\n' "${DOLLAR}{author}/{number}-{slug}" > \
-  "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
-if (
-  cd "$HARDENING_PROBE"
-  bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
-    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
-) >"$BRANCH_ERROR" 2>&1; then
-  echo 'smoke-live: shell-style branch-template placeholder was accepted' >&2
-  exit 1
-fi
-grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
-printf 'branch_template: %s\n' "features/${DOLLAR}slgu/{number}-{slug}" > \
-  "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
-if (
-  cd "$HARDENING_PROBE"
-  bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
-    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
-) >"$BRANCH_ERROR" 2>&1; then
-  echo 'smoke-live: unbraced shell-style branch-template placeholder was accepted' >&2
-  exit 1
-fi
-grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
-if (
-  cd "$HARDENING_PROBE"
-  python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
-    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
-) >"$BRANCH_ERROR" 2>&1; then
-  echo 'smoke-live: Python accepted an arbitrary dollar-style placeholder' >&2
-  exit 1
-fi
-grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
-if command -v pwsh >/dev/null 2>&1; then
   if (
     cd "$HARDENING_PROBE"
-    pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
-      -DryRun -Number 999 -ShortName shell-placeholder-probe 'shell placeholder probe'
+    python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+      --dry-run --number 999 --short-name placeholder-probe 'placeholder probe'
   ) >"$BRANCH_ERROR" 2>&1; then
-    echo 'smoke-live: PowerShell accepted an arbitrary dollar-style placeholder' >&2
+    echo 'smoke-live: Python accepted an unsupported branch-template placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+  if command -v pwsh >/dev/null 2>&1; then
+    if (
+      cd "$HARDENING_PROBE"
+      pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+        -DryRun -Number 999 -ShortName placeholder-probe 'placeholder probe'
+    ) >"$BRANCH_ERROR" 2>&1; then
+      echo 'smoke-live: PowerShell accepted an unsupported branch-template placeholder' >&2
+      exit 1
+    fi
+    grep -Fq 'unsupported or malformed placeholder' "$BRANCH_ERROR"
+  fi
+done
+DOLLAR='$'
+for shell_placeholder in "${DOLLAR}{author}" "${DOLLAR}slgu" "${DOLLAR}1" "${DOLLAR}?"; do
+  printf 'branch_template: %s\n' "features/${shell_placeholder}/{number}-{slug}" > \
+    "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
+  if (
+    cd "$HARDENING_PROBE"
+    bash .specify/extensions/git/scripts/bash/create-new-feature-branch.sh \
+      --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: dollar-style branch-template placeholder was accepted' >&2
     exit 1
   fi
   grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
-fi
+  if (
+    cd "$HARDENING_PROBE"
+    python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+      --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: Python accepted a dollar-style placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+  if command -v pwsh >/dev/null 2>&1; then
+    if (
+      cd "$HARDENING_PROBE"
+      pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+        -DryRun -Number 999 -ShortName shell-placeholder-probe 'shell placeholder probe'
+    ) >"$BRANCH_ERROR" 2>&1; then
+      echo 'smoke-live: PowerShell accepted a dollar-style placeholder' >&2
+      exit 1
+    fi
+    grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+  fi
+done
 python3 - \
   "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" \
   "$HARDENING_PROBE/.specify/templates/checklist-template.md" <<'PY'
