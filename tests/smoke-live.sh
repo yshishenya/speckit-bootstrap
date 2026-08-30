@@ -517,6 +517,31 @@ fi
 rm -f "$CORE_HELPER"
 rmdir "$(dirname "$CORE_HELPER")"
 
+MONOREPO="$SANDBOX/monorepo"
+NESTED_PROJECT="$MONOREPO/apps/nested"
+mkdir -p "$NESTED_PROJECT/.specify/extensions/git/scripts/python" \
+  "$NESTED_PROJECT/.specify/extensions/git" \
+  "$NESTED_PROJECT/specs/007-nested" \
+  "$MONOREPO/specs/999-parent"
+git -C "$MONOREPO" init -q
+cp "$BRANCH_SCRIPT" \
+  "$NESTED_PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py"
+printf 'branch_prefix: nested\n' > \
+  "$NESTED_PROJECT/.specify/extensions/git/git-config.yml"
+NESTED_BRANCH_JSON="$(
+  cd "$MONOREPO"
+  python3 "$NESTED_PROJECT/.specify/extensions/git/scripts/python/create_new_feature_branch.py" \
+    --json --dry-run --short-name nested-root 'nested root'
+)"
+python3 - "$NESTED_BRANCH_JSON" <<'PY'
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+assert payload["BRANCH_NAME"] == "nested/008-nested-root", payload
+assert payload["FEATURE_NUM"] == "008", payload
+PY
+
 UPGRADE_PROBE="$SANDBOX/upgrade-probe"
 mkdir -p "$UPGRADE_PROBE"
 cp -R "$PROJECT/.agents" "$UPGRADE_PROBE/.agents"

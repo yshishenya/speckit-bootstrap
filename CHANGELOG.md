@@ -6,6 +6,19 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.7] - 2026-08-30
+
+### Fixed
+
+- Make direct planning and implementation fail closed on missing mandatory
+  clarification, task-to-issue ownership, and unknown risk-lane evidence.
+- Stop conditional mandatory hooks when HookExecutor is unavailable instead of
+  silently skipping policy or validation work.
+- Prevent convergence from turning pre-existing shared baseline code into
+  removal tasks without current-slice provenance.
+- Preserve a nested Spec Kit project root for numbering and configuration when
+  its Git repository root is a parent directory.
+
 ## [0.9.6] - 2026-08-30
 
 ### Fixed
