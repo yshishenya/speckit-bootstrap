@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.7" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -840,6 +840,30 @@ for marker in (
     "existing project files remain unstaged for review",
     "upstream mandatory hook guard changed",
     "updated.count(mandatory_hook_guard) == 0",
+    "Spec Kit task IDs: T001, T002",
+    "run `$speckit-taskstoissues` first",
+    "registry_invalid: enabled for {ext_id} must be boolean",
+    "Push-Location $repoRoot",
+    "sys.dont_write_bytecode = True",
+    "Load minimal question context",
+    "documents listed in `AVAILABLE_DOCS`",
+    "Deduplicate the task IDs before processing them",
+    "Never remove an existing checklist",
+    "never auto-committed",
+    "native argument array/binding",
+    "blocking installation error",
+    "Numbering is per-project only",
+    "Caller owns and cleans up the transport file",
+    "message file must be outside the Git worktree",
+    "if args.json_mode",
+    "failed to enumerate extensions",
+    "Resolve-ContextPath -Root $ProjectRoot",
+    "linksResolved",
+    "_resolve_preset_candidate",
+    "preset enabled for {pid} must be boolean",
+    "cygpath -am",
+    "entry.get('parsed_options', {}).get('skills') is True",
+    "return stripped",
     "pending.items()",
 ):
     assert marker in text, marker

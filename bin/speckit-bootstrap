@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.0"
+BOOTSTRAP_VERSION="0.9.7"
 
 usage() {
   cat <<'EOF'
@@ -1801,6 +1801,7 @@ ensure_governed_generated_artifacts() {
   fi
 
   python3 - "$PROJECT_DIR" <<'PY' || return 1
+import hashlib
 import re
 import sys
 from pathlib import Path
@@ -1822,11 +1823,27 @@ def replace(relative: str, old: str, new: str, *, count: int = 0) -> None:
     if new in text:
         return
     if old not in text:
+        anchor = hashlib.sha256(old.encode("utf-8")).hexdigest()[:12]
         raise SystemExit(
-            f"speckit-bootstrap: upstream artifact changed; hardening anchor is missing in {relative}"
+            f"speckit-bootstrap: upstream artifact changed; hardening anchor {anchor} is missing in {relative}"
         )
     updated = text.replace(old, new) if count == 0 else text.replace(old, new, count)
     pending[path] = updated
+
+
+def replace_chain(relative: str, *states: str) -> None:
+    path = required(relative)
+    text = pending.get(path, path.read_text(encoding="utf-8"))
+    counts = [text.count(state) for state in states]
+    if counts[-1] == 1 and sum(counts) == 1:
+        return
+    for state, count in zip(states[:-1], counts[:-1]):
+        if count == 1 and sum(counts) == 1:
+            pending[path] = text.replace(state, states[-1], 1)
+            return
+    raise SystemExit(
+        f"speckit-bootstrap: upstream artifact changed; migration state is unknown in {relative}"
+    )
 
 
 def replace_regex(relative: str, pattern: str, replacement: str) -> None:
@@ -1844,8 +1861,8 @@ def replace_regex(relative: str, pattern: str, replacement: str) -> None:
     pending[path] = updated
 
 
-invalid_yaml = (
-    "If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally"
+invalid_yaml_skip = re.compile(
+    r"If the YAML cannot be parsed or is invalid, skip hook checking silently and continue(?: normally| to [^\n.]+)\.?"
 )
 invalid_yaml_guard = (
     "If the YAML cannot be parsed or is invalid, STOP with a blocking configuration error; "
@@ -1862,6 +1879,19 @@ mandatory_hook_guard = mandatory_hook + (
     "or other state-changing hooks require explicit user confirmation at this point even when `optional: false`; "
     "without confirmation, STOP instead of executing them."
 )
+condition_policy = (
+    "- For each remaining hook, do **not** attempt to interpret or evaluate hook `condition` expressions:\n"
+    "  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable\n"
+    "  - If the hook defines a non-empty `condition`, skip the hook and leave condition evaluation to the "
+    "HookExecutor implementation"
+)
+condition_guard = (
+    "- For each remaining hook, do **not** interpret the `condition` expression yourself:\n"
+    "  - If the hook has no `condition` field, or it is null/empty, treat the hook as executable\n"
+    "  - If an optional hook defines a non-empty `condition`, skip it and leave evaluation to HookExecutor\n"
+    "  - If a mandatory hook defines a non-empty `condition`, invoke HookExecutor and wait for its result; "
+    "if HookExecutor is unavailable, STOP with a blocking error instead of continuing"
+)
 skills = sorted((root / ".agents/skills").glob("speckit-*/SKILL.md"))
 if not skills:
     raise SystemExit("speckit-bootstrap: generated project-local Spec Kit skills are missing")
@@ -1870,12 +1900,13 @@ for path in skills:
     hook_bearing = ".specify/extensions.yml" in text and "EXECUTE_COMMAND" in text
     if not hook_bearing:
         continue
-    updated = text.replace(invalid_yaml, invalid_yaml_guard)
+    updated = invalid_yaml_skip.sub(invalid_yaml_guard, text)
     protected_guard = "\0SPECKIT_MANDATORY_HOOK_GUARD\0"
     updated = updated.replace(mandatory_hook_guard, protected_guard)
     updated = updated.replace(mandatory_hook, mandatory_hook_guard)
     updated = updated.replace(protected_guard, mandatory_hook_guard)
-    if invalid_yaml in updated or invalid_yaml_guard not in updated:
+    updated = updated.replace(condition_policy, condition_guard)
+    if invalid_yaml_skip.search(updated) or invalid_yaml_guard not in updated:
         raise SystemExit(
             f"speckit-bootstrap: upstream hook YAML guard changed in {path.relative_to(root)}"
         )
@@ -1886,8 +1917,56 @@ for path in skills:
         raise SystemExit(
             f"speckit-bootstrap: upstream mandatory hook guard changed in {path.relative_to(root)}"
         )
+    if condition_policy in updated or condition_guard not in updated:
+        raise SystemExit(
+            f"speckit-bootstrap: upstream conditional hook guard changed in {path.relative_to(root)}"
+        )
     if updated != text:
         pending[path] = updated
+
+replace_regex(
+    ".agents/skills/speckit-checklist/SKILL.md",
+    r"(?:3\. \*\*Clarify intent \(dynamic\)\*\*: Derive up to THREE initial contextual clarifying questions "
+    r"\(no pre-baked catalog\)\. They MUST:|3\. \*\*Load minimal question context and clarify intent "
+    r"\(dynamic\)\*\*: Read the portions of `spec\.md`, `plan\.md`, and `tasks\.md` needed for question "
+    r"generation, then derive up to THREE initial contextual clarifying questions \(no pre-baked catalog\)\. They MUST:)",
+    "3. **Load minimal question context and clarify intent (dynamic)**: Read only the needed portions of feature "
+    "documents listed in `AVAILABLE_DOCS`; skip unavailable documents and use `$ARGUMENTS` when needed context is "
+    "absent. Then derive up to THREE initial contextual clarifying questions (no pre-baked catalog). They MUST:",
+)
+replace(
+    ".agents/skills/speckit-checklist/SKILL.md",
+    "To avoid clutter, use descriptive types and clean up obsolete checklists when done.",
+    "To avoid clutter, use descriptive types. Never remove an existing checklist in this command; removal requires "
+    "a separate, explicit reviewer-authorized action.",
+)
+
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
+    "- **CRITICAL**: violates a constitution MUST principle, or a `missing`/`contradicts` gap\n"
+    "  that blocks baseline functionality of a P1 user story.\n"
+    "- **HIGH**: a `missing` or `partial` gap on a core functional requirement or acceptance\n"
+    "  criterion.\n"
+    "- **MEDIUM**: a `partial` gap on a secondary requirement, or an `unrequested` addition with\n"
+    "  unclear justification.\n"
+    "- **LOW**: minor partial gaps, polish, or low-risk `unrequested` additions.",
+    "- **CRITICAL**: violates a constitution MUST principle, or a `missing`/`contradicts` gap\n"
+    "  that blocks baseline functionality of a P1 user story.\n"
+    "- **HIGH**: a `missing`, `partial`, or `contradicts` gap on a core functional requirement or\n"
+    "  acceptance criterion.\n"
+    "- **MEDIUM**: a `missing`, `partial`, or `contradicts` gap on a secondary requirement, or an\n"
+    "  `unrequested` addition with unclear justification.\n"
+    "- **LOW**: minor partial gaps, polish, or low-risk `unrequested` additions.",
+)
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
+    "- **`unrequested`**: the code contains work not called for by the spec, plan, or tasks\n"
+    "  (surfaced for awareness — converge does **not** delete code, it only appends a task to\n"
+    "  review/justify or remove it).",
+    "- **`unrequested`**: the code contains work not called for by the spec, plan, or tasks. Emit this finding "
+    "only when diff/commit/task provenance shows the current feature slice introduced the code; otherwise "
+    "reconcile it against the merged product baseline and do not append a removal task for pre-existing shared code.",
+)
 
 replace(
     ".agents/skills/speckit-clarify/SKILL.md",
@@ -1901,6 +1980,17 @@ replace(
 )
 
 replace(
+    ".agents/skills/speckit-plan/SKILL.md",
+    "3. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:",
+    "3. **Verify the clarification gate**: Determine the selected risk lane from the feature artifacts, user "
+    "request, and project guidance. Capture, privacy, auth, backend, infrastructure, deletion, diagnostics, and "
+    "high-risk UX work require current `$speckit-clarify` evidence in `spec.md`; if the lane is unclear or the "
+    "evidence is absent/stale, STOP and run `$speckit-clarify`. Do not convert required user decisions into "
+    "research assumptions.\n\n"
+    "4. **Execute plan workflow**: Follow the structure in IMPL_PLAN template to:",
+)
+
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "   - **If any checklist has unchecked items**:\n"
     "     - Display the table with unchecked item counts\n"
@@ -1913,17 +2003,27 @@ replace(
     "     - For a high-risk lane, **STOP** until the reviewer completes the checklist; user risk acceptance cannot bypass this gate\n"
     "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
     "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
+    "   - **If any checklist has unchecked items**:\n"
+    "     - Display the table with unchecked item counts and read the selected risk/validation lane from `plan.md`; "
+    "treat a missing, unrecognized, or ambiguous lane as high-risk for this gate\n"
+    "     - For a high-risk lane, **STOP** until the reviewer completes the checklist; user risk acceptance cannot bypass this gate\n"
+    "     - For any other lane, **STOP** and ask whether to proceed with an explicit recorded risk acceptance\n"
+    "     - Wait for user response before continuing; proceed only after an explicit yes for a non-high-risk lane",
 )
-replace(
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "3. Load and analyze the implementation context:",
     "3. Verify the analyze gate before implementation: confirm `$speckit-analyze` ran after the current `tasks.md` "
     "and met the feature threshold (default: no unresolved critical/high findings). If current evidence is absent or "
     "stale, STOP and run `$speckit-analyze` before continuing.\n\n"
     "4. Load and analyze the implementation context:",
-    count=1,
+    "4. Verify the issue-sync gate before implementation: when the repository has a GitHub remote and project "
+    "guidance requires implementation tracking, confirm every unique executable task has an open or reconciled "
+    "owner and current evidence. If ownership is absent, incomplete, or stale, STOP and run "
+    "`$speckit-taskstoissues`.\n\n"
+    "5. Load and analyze the implementation context:",
 )
-replace(
+replace_chain(
     ".agents/skills/speckit-implement/SKILL.md",
     "4. **Project Setup Verification**:\n"
     "   - **REQUIRED**: Create/verify ignore files based on actual project setup:",
@@ -1931,6 +2031,44 @@ replace(
     "   - **REQUIRED**: Inspect ignore files based on actual project setup. Modify an ignore file only when a task "
     "explicitly requires it or the user approves that scoped change; never silently add broad patterns that can hide "
     "files from review:",
+    "6. **Project Setup Verification**:\n"
+    "   - **REQUIRED**: Inspect ignore files based on actual project setup. Modify an ignore file only when a task "
+    "explicitly requires it or the user approves that scoped change; never silently add broad patterns that can hide "
+    "files from review:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "5. Parse tasks.md structure and extract:",
+    "7. Parse tasks.md structure and extract:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "6. Execute implementation following the task plan:",
+    "8. Execute implementation following the task plan:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "7. Implementation execution rules:",
+    "9. Implementation execution rules:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "8. Progress tracking and error handling:",
+    "10. Progress tracking and error handling:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "9. Completion validation:",
+    "11. Completion validation:",
+)
+replace(
+    ".agents/skills/speckit-converge/SKILL.md",
+    "- On `tasks_appended`: state how many tasks were appended under which phase, and recommend\n"
+    "  running `$speckit-implement` to complete them; note that a follow-up converge\n"
+    "  run will find fewer or no remaining items.",
+    "- On `tasks_appended`: state how many tasks were appended under which phase. If a GitHub remote exists, "
+    "run `$speckit-taskstoissues` first so every new executable task has external traceability; then run "
+    "`$speckit-implement` and follow with another converge pass.",
 )
 replace(
     ".agents/skills/speckit-converge/SKILL.md",
@@ -1961,11 +2099,17 @@ replace(
 
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
-    r"For each issue title, match it against the task ID pattern .*?the skill is re-invoked\.",
-    "For each issue, match the task ID pattern `\\bT\\d{3,}\\b` against both its title and body. "
-    "Mark every matching task ID as already covered, including additional task IDs listed in a canonical multi-task "
-    "issue body. Stop paginating as soon as every task ID has been matched, or when there are no more pages. This "
-    "prevents duplicates without fetching the whole issue history once all task IDs are matched.",
+    r"(?:For each issue title, match it against the task ID pattern .*?the skill is re-invoked\."
+    r"|For each issue, match the task ID pattern .*?once all task IDs are matched\."
+    r"|For each issue, establish task ownership only from a canonical title .*?when there are no more pages\.)",
+    "For each issue, establish task ownership only from a canonical title containing `T###:` or an explicit body "
+    "field such as `Spec Kit task IDs: T001, T002`; ordinary dependency, context, or link mentions do not establish "
+    "ownership. Mark open ownership matches as covered. Track closed ownership matches separately: when `tasks.md` "
+    "still has that task unchecked, verify closure and implementation evidence, then either reopen the issue with a "
+    "Russian reconciliation comment or STOP and report the `tasks.md` mismatch when the closure is valid. Never "
+    "create a duplicate while a closed match is unresolved. Deduplicate the task IDs before processing them. Stop "
+    "paginating only when every unique task ID has an open owner or a reconciled closed owner, or when there are no "
+    "more pages.",
 )
 replace_regex(
     ".agents/skills/speckit-taskstoissues/SKILL.md",
@@ -1974,7 +2118,8 @@ replace_regex(
     "Git remote. First read `docs/agent-guidance/github-issue-canon.md` when it exists. Under that project canon, "
     "construct its required feature/priority/area title, Russian outcome, body sections, labels, and traceability; "
     "the bare `T001: <description>` title is only a fallback for repositories without a project canon. Strip the "
-    "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task.\n"
+    "leading task checkbox and optional `[P]`/`[US#]` markers before mapping the task. Iterate each unique task ID "
+    "once and add a successfully created ID to the covered set before processing the next task.\n"
     "   - **Skip**",
 )
 
@@ -1984,6 +2129,79 @@ replace(
     "If `context_files` and `context_file` are empty, the command derives a default target from the active integration "
     "in `.specify/init-options.json` and `agent-context-defaults.json`; it reports nothing to do only when no mapped target exists.",
 )
+
+replace(
+    ".agents/skills/speckit-git-commit/SKILL.md",
+    "5. Determines the commit message based on `commit_style` (see below)\n"
+    "6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`",
+    "5. Determines the commit message based on `commit_style` (see below)\n"
+    "6. Inspects `git status` and STOPS when the worktree contains changes outside the paths owned by the triggering "
+    "Spec Kit command; auto-commit must never absorb unrelated or secret-bearing files\n"
+    "7. Requires explicit user confirmation immediately before every state-changing commit; `after_implement` is "
+    "never auto-committed and remains a manual post-validation commit\n"
+    "8. Only then, if enabled and there are command-owned changes, runs the configured auto-commit script",
+)
+replace(
+    ".agents/skills/speckit-git-commit/SKILL.md",
+    "Determine the event name from the hook that triggered this command, then run the script:",
+    "Determine the event name from the hook that triggered this command. Before invoking a script, inspect `git "
+    "status --short`, verify every changed path belongs to that command, and obtain explicit user confirmation for "
+    "the commit. If the event is `after_implement`, do not invoke auto-commit; finish validation and use a manual "
+    "user-approved implementation commit instead. Then run the script:",
+)
+replace(
+    ".agents/skills/speckit-git-commit/SKILL.md",
+    "Instead, write the message to a temporary file using your file-editing tool (not a shell `echo`/`printf`), "
+    "then pass that file's path via `--message-file <path>` (Bash) or `-MessageFile <path>` (PowerShell).",
+    "Instead, write the message to a temporary file outside the repository using your file-editing tool (not a "
+    "shell `echo`/`printf`), then pass that file's path via `--message-file <path>` (Bash) or `-MessageFile <path>` "
+    "(PowerShell). The script reads but never deletes caller-owned message files; the caller cleans up its own "
+    "temporary file after the command returns.",
+)
+
+replace(
+    ".agents/skills/speckit-git-feature/SKILL.md",
+    "- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --short-name \"<short-name>\" \"<feature description>\"`\n"
+    "- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --timestamp --short-name \"<short-name>\" \"<feature description>\"`\n"
+    "- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -ShortName \"<short-name>\" \"<feature description>\"`\n"
+    "- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -Timestamp -ShortName \"<short-name>\" \"<feature description>\"`",
+    "Use a native argument array/binding; never interpolate the short name or feature description into a shell "
+    "command string.\n\n"
+    "- **Bash argv**: `[\".specify/extensions/git/scripts/bash/create-new-feature-branch.sh\", \"--json\", "
+    "\"--short-name\", short_name, feature_description]`\n"
+    "- **Bash timestamp argv**: add `\"--timestamp\"` before `\"--short-name\"`\n"
+    "- **PowerShell argv**: `[\".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1\", "
+    "\"-Json\", \"-ShortName\", short_name, feature_description]`\n"
+    "- **PowerShell timestamp argv**: add `\"-Timestamp\"` before `\"-ShortName\"`",
+)
+replace(
+    ".specify/extensions/git/commands/speckit.git.feature.md",
+    "- **Bash**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --short-name \"<short-name>\" \"<feature description>\"`\n"
+    "- **Bash (timestamp)**: `.specify/extensions/git/scripts/bash/create-new-feature-branch.sh --json --timestamp --short-name \"<short-name>\" \"<feature description>\"`\n"
+    "- **PowerShell**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -ShortName \"<short-name>\" \"<feature description>\"`\n"
+    "- **PowerShell (timestamp)**: `.specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 -Json -Timestamp -ShortName \"<short-name>\" \"<feature description>\"`",
+    "Use a native argument array/binding; never interpolate the short name or feature description into a shell "
+    "command string.\n\n"
+    "- **Bash argv**: `[\".specify/extensions/git/scripts/bash/create-new-feature-branch.sh\", \"--json\", "
+    "\"--short-name\", short_name, feature_description]`\n"
+    "- **Bash timestamp argv**: add `\"--timestamp\"` before `\"--short-name\"`\n"
+    "- **PowerShell argv**: `[\".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1\", "
+    "\"-Json\", \"-ShortName\", short_name, feature_description]`\n"
+    "- **PowerShell timestamp argv**: add `\"-Timestamp\"` before `\"-ShortName\"`",
+)
+
+for relative in (
+    ".agents/skills/speckit-git-feature/SKILL.md",
+    ".specify/extensions/git/commands/speckit.git.feature.md",
+):
+    replace(
+        relative,
+        "For monorepos, a template such as `{author}/{app}/{number}-{slug}` creates names like "
+        "`jdoe/web/008-guided-tour` while preserving per-project feature numbering.",
+        "For monorepos, a template such as `{author}/{app}/{number}-{slug}` creates names like "
+        "`jdoe/web/008-guided-tour`. Numbering is per-project only when each project also uses a distinct specs "
+        "directory; a shared `specs/` directory still contributes its highest global number.",
+    )
 replace(
     ".agents/skills/speckit-agent-context-update/SKILL.md",
     "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
@@ -2009,8 +2227,13 @@ replace(
     "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
 )
 
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_path = required(".specify/extensions/git/scripts/python/auto_commit.py")
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+if "def _read_commit_style" not in auto_commit_text:
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
     "Usage: auto_commit.py <event_name>",
     "Usage: auto_commit.py <event_name> [--message-file <path>]",
 )
@@ -2022,8 +2245,12 @@ replace(
     "        line = record[:-1]",
     "    for line in content.splitlines():",
 )
-replace(
-    ".specify/extensions/git/scripts/python/auto_commit.py",
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+if "def _read_commit_style" not in auto_commit_text:
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
     "\n\ndef main(argv: list[str]) -> int:\n"
     "    event_name = argv[0] if argv else \"\"\n"
     "    if not event_name:\n"
@@ -2059,19 +2286,261 @@ replace(
     "        message_file = Path(argv[2])\n"
     "        try:\n"
     "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+        "            return 1",
+    )
+
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+auto_commit_v091_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
     "            message_file.unlink()\n"
     "        except (OSError, UnicodeDecodeError) as exc:\n"
     "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
-    "            return 1",
+    "            return 1"
+)
+auto_commit_hardened_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_final_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_cleanup_counts = {
+    form: auto_commit_text.count(form)
+    for form in (
+        auto_commit_v091_cleanup,
+        auto_commit_hardened_cleanup,
+        auto_commit_final_cleanup,
+    )
+}
+if (
+    (
+        auto_commit_cleanup_counts[auto_commit_hardened_cleanup] == 1
+        or auto_commit_cleanup_counts[auto_commit_final_cleanup] == 1
+    )
+    and sum(auto_commit_cleanup_counts.values()) == 1
+):
+    pass
+elif (
+    auto_commit_cleanup_counts[auto_commit_v091_cleanup] == 1
+    and sum(auto_commit_cleanup_counts.values()) == 1
+):
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
+        auto_commit_v091_cleanup,
+        auto_commit_hardened_cleanup,
+    )
+else:
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Python auto-commit cleanup form is unknown"
+    )
+
+replace(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh",
+    "            if [ ! -f \"$_message_file\" ]; then\n"
+    "                echo \"[specify] Error: message file '$_message_file' not found\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_message_file\")\"",
+    "            if [ ! -f \"$_message_file\" ]; then\n"
+    "                echo \"[specify] Error: message file '$_message_file' not found\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            _message_dir=\"$(CDPATH=\"\" cd \"$(dirname \"$_message_file\")\" && pwd -P)\"\n"
+    "            _message_file=\"$_message_dir/$(basename \"$_message_file\")\"\n"
+    "            if ! command -v python3 >/dev/null 2>&1; then\n"
+    "                echo \"[specify] Error: python3 is required to validate --message-file\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            if ! _resolved_message_file=\"$(python3 -c 'import sys; from pathlib import Path; print(Path(sys.argv[1]).resolve(strict=True))' \"$_message_file\")\"; then\n"
+    "                echo \"[specify] Error: cannot resolve message file '$_message_file'\" >&2\n"
+    "                exit 1\n"
+    "            fi\n"
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"",
+)
+replace(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh",
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"\n"
+    "            # The message file is a transport-only artifact: its content is\n"
+    "            # now captured above, so remove it immediately. Otherwise, if it\n"
+    "            # was written inside the worktree, it would be picked up as an\n"
+    "            # untracked change by both the \"any changes?\" check below and by\n"
+    "            # `git add .`, polluting the commit or defeating the no-changes\n"
+    "            # short-circuit even when nothing else changed.\n"
+    "            rm -f \"$_message_file\"",
+    "            GENERATED_MESSAGE=\"$(cat \"$_resolved_message_file\")\"\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.",
+)
+bash_auto_commit_path = required(
+    ".specify/extensions/git/scripts/bash/auto-commit.sh"
+)
+bash_auto_commit_text = pending.get(
+    bash_auto_commit_path, bash_auto_commit_path.read_text(encoding="utf-8")
+)
+bash_containment_preamble = (
+    "if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then\n"
+    "    echo \"[specify] Warning: Not a Git repository; skipped auto-commit\" >&2\n"
+    "    exit 0\n"
+    "fi"
+)
+bash_containment_v095 = (
+    bash_containment_preamble
+    + "\n\n_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
+    "for _message_path in \"${_message_file:-}\" \"${_resolved_message_file:-}\"; do\n"
+    "    case \"$_message_path\" in\n"
+    "        \"$_worktree_root\"|\"$_worktree_root\"/*)\n"
+    "            echo \"[specify] Error: message file must be outside the Git worktree\" >&2\n"
+    "            exit 1\n"
+    "            ;;\n"
+    "    esac\n"
+    "done"
+)
+bash_containment_v096 = bash_containment_v095.replace(
+    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n",
+    "_worktree_root=\"$(git rev-parse --show-toplevel)\"\n"
+    "if command -v cygpath >/dev/null 2>&1; then\n"
+    "    _worktree_root=\"$(cygpath -am \"$_worktree_root\")\"\n"
+    "    [ -z \"${_message_file:-}\" ] || _message_file=\"$(cygpath -am \"$_message_file\")\"\n"
+    "    [ -z \"${_resolved_message_file:-}\" ] || _resolved_message_file=\"$(cygpath -am \"$_resolved_message_file\")\"\n"
+    "fi\n",
+    1,
+)
+bash_containment_state = (
+    bash_auto_commit_text.count(bash_containment_preamble),
+    bash_auto_commit_text.count(bash_containment_v095),
+    bash_auto_commit_text.count(bash_containment_v096),
+)
+if bash_containment_state == (1, 0, 0):
+    bash_auto_commit_text = bash_auto_commit_text.replace(
+        bash_containment_preamble, bash_containment_v096, 1
+    )
+elif bash_containment_state == (1, 1, 0):
+    bash_auto_commit_text = bash_auto_commit_text.replace(
+        bash_containment_v095, bash_containment_v096, 1
+    )
+elif bash_containment_state != (1, 0, 1):
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Bash message containment form is unknown "
+        f"{bash_containment_state}"
+    )
+pending[bash_auto_commit_path] = bash_auto_commit_text
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "    # The message file is a transport-only artifact: its content is now\n"
+    "    # captured above, so remove it immediately. Otherwise, if it was written\n"
+    "    # inside the worktree, it would be picked up as an untracked change by\n"
+    "    # both the \"any changes?\" check below and by `git add .`, polluting the\n"
+    "    # commit or defeating the no-changes short-circuit even when nothing\n"
+    "    # else changed.\n"
+    "    Remove-Item -Path $MessageFile -Force -ErrorAction SilentlyContinue",
+    "    # Caller owns and cleans up the transport file; never delete it here.",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "$ErrorActionPreference = 'Stop'\n\n"
+    "if ($MessageFile) {",
+    "$ErrorActionPreference = 'Stop'\n"
+    "$messageFilePaths = @()\n\n"
+    "if ($MessageFile) {",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "    $GeneratedMessage = (Get-Content -Path $MessageFile -Raw)",
+    "    $literalMessageFile = [System.IO.Path]::GetFullPath($MessageFile)\n"
+    "    $resolvedMessageFile = (Resolve-Path -LiteralPath $MessageFile).Path\n"
+    "    $messageFilePaths = @($literalMessageFile, $resolvedMessageFile)\n"
+    "    $GeneratedMessage = (Get-Content -LiteralPath $MessageFile -Raw)",
+)
+replace(
+    ".specify/extensions/git/scripts/powershell/auto-commit.ps1",
+    "if (-not $isRepo) {\n"
+    "    Write-Warning \"[specify] Warning: Not a Git repository; skipped auto-commit\"\n"
+    "    exit 0\n"
+    "}",
+    "if (-not $isRepo) {\n"
+    "    Write-Warning \"[specify] Warning: Not a Git repository; skipped auto-commit\"\n"
+    "    exit 0\n"
+    "}\n\n"
+    "$worktreeRoot = [System.IO.Path]::GetFullPath((git rev-parse --show-toplevel).Trim())\n"
+    "$worktreePrefix = $worktreeRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, "
+    "[System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar\n"
+    "$comparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { "
+    "[System.StringComparison]::Ordinal }\n"
+    "foreach ($messagePath in $messageFilePaths) {\n"
+    "    $fullMessagePath = [System.IO.Path]::GetFullPath($messagePath)\n"
+    "    if ($fullMessagePath.Equals($worktreeRoot, $comparison) -or "
+    "$fullMessagePath.StartsWith($worktreePrefix, $comparison)) {\n"
+    "        Write-Warning \"[specify] Error: message file must be outside the Git worktree\"\n"
+    "        exit 1\n"
+    "    }\n"
+    "}",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/auto_commit.py",
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])",
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()",
 )
 replace(
     ".specify/extensions/git/scripts/python/auto_commit.py",
-    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
-    "    if not enabled:\n"
-    "        return 0",
-    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
-    "    if not enabled:\n"
-    "        return 0\n"
+    "    script_dir = Path(__file__).resolve().parent\n"
+    "    repo_root = _find_project_root(script_dir) or Path.cwd()",
+    "    script_dir = Path(__file__).resolve().parent\n"
+    "    repo_root = (_find_project_root(script_dir) or Path.cwd()).resolve()\n"
+    "    if message_file is not None and resolved_message_file is not None:\n"
+    "        if any(\n"
+    "            path == repo_root or repo_root in path.parents\n"
+    "            for path in (message_file, resolved_message_file)\n"
+    "        ):\n"
+    "            print(\n"
+    "                \"[specify] Error: message file must be outside the Git worktree\",\n"
+    "                file=sys.stderr,\n"
+    "            )\n"
+    "            return 1",
+)
+
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+auto_commit_conventional_guard = (
     "    commit_style = _read_commit_style(config_file)\n"
     "    if commit_style == \"conventional\":\n"
     "        if not generated_message:\n"
@@ -2081,9 +2550,196 @@ replace(
     "                file=sys.stderr,\n"
     "            )\n"
     "            return 1\n"
-    "        commit_msg = generated_message",
+    "        commit_msg = generated_message\n"
+)
+auto_commit_pre_guard = (
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n"
+    + auto_commit_conventional_guard
+    + "\n    # Check if there are changes to commit"
+)
+auto_commit_clean_preamble = (
+    "    enabled, commit_msg = _parse_auto_commit_config(config_file, event_name)\n"
+    "    if not enabled:\n"
+    "        return 0\n\n"
+    "    # Check if there are changes to commit"
+)
+auto_commit_no_changes = (
+    "    if _quiet(\"diff\", \"--quiet\", \"HEAD\") and _quiet(\"diff\", \"--cached\", \"--quiet\") and not untracked:\n"
+    "        print(f\"[specify] No changes to commit after {event_name}\", file=sys.stderr)\n"
+    "        return 0\n\n"
+)
+auto_commit_post_guard = (
+    auto_commit_no_changes
+    + auto_commit_conventional_guard
+    + "\n    # Derive a human-readable command name from the event"
+)
+auto_commit_clean_tail = (
+    auto_commit_no_changes + "    # Derive a human-readable command name from the event"
+)
+auto_commit_guard_state = (
+    auto_commit_text.count(auto_commit_pre_guard),
+    auto_commit_text.count(auto_commit_clean_preamble),
+    auto_commit_text.count(auto_commit_post_guard),
+    auto_commit_text.count(auto_commit_clean_tail),
+)
+if auto_commit_guard_state == (0, 1, 0, 1):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_clean_tail, auto_commit_post_guard, 1
+    )
+elif auto_commit_guard_state == (1, 0, 0, 1):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_pre_guard, auto_commit_clean_preamble, 1
+    ).replace(auto_commit_clean_tail, auto_commit_post_guard, 1)
+elif auto_commit_guard_state == (1, 0, 1, 0):
+    auto_commit_text = auto_commit_text.replace(
+        auto_commit_pre_guard, auto_commit_clean_preamble, 1
+    )
+elif auto_commit_guard_state != (0, 1, 1, 0):
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Python conventional guard form is unknown "
+        f"{auto_commit_guard_state}"
+    )
+pending[auto_commit_path] = auto_commit_text
+
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "        _err(f\"# To persist: {_persist_hint('SPECIFY_FEATURE', branch_name)}\")",
+    "        if args.json_mode:\n"
+    "            _err(f\"# To persist in your shell: {_persist_hint('SPECIFY_FEATURE', branch_name)}\")",
+)
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "def _local_has_git(repo_root: Path) -> bool:\n"
+    "    git_marker = repo_root / \".git\"\n"
+    "    if not (git_marker.is_dir() or git_marker.is_file()):\n"
+    "        return False\n"
+    "    if shutil.which(\"git\") is None:\n"
+    "        return False",
+    "def _local_has_git(repo_root: Path) -> bool:\n"
+    "    if shutil.which(\"git\") is None:\n"
+    "        return False",
+)
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "    else:\n"
+    "        toplevel = _git_lines(Path.cwd(), \"rev-parse\", \"--show-toplevel\")\n"
+    "        if toplevel:\n"
+    "            repo_root = Path(toplevel[0])\n"
+    "        elif project_root is not None:\n"
+    "            repo_root = project_root\n"
+    "        else:\n"
+    "            _err(\"Error: Could not determine repository root.\")\n"
+    "            return 1",
+    "    else:\n"
+    "        if project_root is not None:\n"
+    "            repo_root = project_root\n"
+    "        else:\n"
+    "            toplevel = _git_lines(Path.cwd(), \"rev-parse\", \"--show-toplevel\")\n"
+    "            if toplevel:\n"
+    "                repo_root = Path(toplevel[0])\n"
+    "            else:\n"
+    "                _err(\"Error: Could not determine repository root.\")\n"
+    "                return 1",
 )
 
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
+    "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
+    "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
+    "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
+    "                    $PlanPath = $fullPath.Substring($normRoot.Length)\n"
+    "                } else {\n"
+    "                    $PlanPath = $fullPath\n"
+    "                }",
+    "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
+    "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
+    "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
+    "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
+    "                    $relativeCandidate = $fullPath.Substring($normRoot.Length)\n"
+    "                    $resolvedCandidate = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relativeCandidate\n"
+    "                    if (Test-IsSubPath -Root $ProjectRoot -Path $resolvedCandidate) {\n"
+    "                        $resolvedPath = $resolvedCandidate.Replace('\\', '/')\n"
+    "                        $PlanPath = $resolvedPath.Substring($normRoot.Length)\n"
+    "                    }\n"
+    "                }",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    $rootFull = [System.IO.Path]::GetFullPath($Root)\n"
+    "    $segments = $RelativePath -split '/'\n"
+    "    $resolved = $rootFull\n\n"
+    "    foreach ($segment in $segments) {\n"
+    "        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {\n"
+    "            continue\n"
+    "        }\n\n"
+    "        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))\n"
+    "        if (Test-Path -LiteralPath $candidate) {\n"
+    "            $item = Get-Item -LiteralPath $candidate -Force\n"
+    "            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {\n"
+    "                $target = $item.Target\n"
+    "                if ($target -is [System.Array]) {\n"
+    "                    $target = $target[0]\n"
+    "                }\n"
+    "                if ($target) {\n"
+    "                    if ([System.IO.Path]::IsPathRooted($target)) {\n"
+    "                        $candidate = [System.IO.Path]::GetFullPath($target)\n"
+    "                    } else {\n"
+    "                        $candidate = [System.IO.Path]::GetFullPath(\n"
+    "                            (Join-Path (Split-Path -Parent $candidate) $target)\n"
+    "                        )\n"
+    "                    }\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        $resolved = $candidate\n"
+    "    }",
+    "    $rootFull = [System.IO.Path]::GetFullPath($Root)\n"
+    "    $segments = [System.Collections.Generic.List[string]]::new()\n"
+    "    foreach ($segment in ($RelativePath -split '[\\\\/]')) {\n"
+    "        $segments.Add($segment)\n"
+    "    }\n"
+    "    $resolved = $rootFull\n"
+    "    $linksResolved = 0\n\n"
+    "    while ($segments.Count -gt 0) {\n"
+    "        $segment = $segments[0]\n"
+    "        $segments.RemoveAt(0)\n"
+    "        if ([string]::IsNullOrWhiteSpace($segment) -or $segment -eq '.') {\n"
+    "            continue\n"
+    "        }\n\n"
+    "        $candidate = [System.IO.Path]::GetFullPath((Join-Path $resolved $segment))\n"
+    "        if (Test-Path -LiteralPath $candidate) {\n"
+    "            $item = Get-Item -LiteralPath $candidate -Force\n"
+    "            if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {\n"
+    "                $target = $item.Target\n"
+    "                if ($target -is [System.Array]) {\n"
+    "                    $target = $target[0]\n"
+    "                }\n"
+    "                if ($target) {\n"
+    "                    $linksResolved++\n"
+    "                    if ($linksResolved -gt 40) {\n"
+    "                        throw \"Too many symbolic links while resolving '$RelativePath'\"\n"
+    "                    }\n"
+    "                    $targetFull = if ([System.IO.Path]::IsPathRooted($target)) {\n"
+    "                        [System.IO.Path]::GetFullPath($target)\n"
+    "                    } else {\n"
+    "                        [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $candidate) $target))\n"
+    "                    }\n"
+    "                    $targetRoot = [System.IO.Path]::GetPathRoot($targetFull)\n"
+    "                    $targetSegments = $targetFull.Substring($targetRoot.Length) -split '[\\\\/]'\n"
+    "                    for ($i = $targetSegments.Count - 1; $i -ge 0; $i--) {\n"
+    "                        $segments.Insert(0, $targetSegments[$i])\n"
+    "                    }\n"
+    "                    $resolved = $targetRoot\n"
+    "                    continue\n"
+    "                }\n"
+    "            }\n"
+    "        }\n"
+    "        $resolved = $candidate\n"
+    "    }",
+)
 replace(
     ".specify/extensions/git/scripts/python/initialize_repo.py",
     "        ([\"git\", \"add\", \".\"], \"git add\"),\n",
@@ -2106,13 +2762,6 @@ for relative in (
 ):
     replace(
         relative,
-        "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`",
-        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`",
-    )
-    replace(
-        relative,
         "- Runs `git init`, `git add .`, and `git commit` with an initial commit message",
         "- Runs `git init` and creates an empty initial commit; existing project files remain unstaged for review",
     )
@@ -2120,6 +2769,39 @@ for relative in (
         relative,
         "If Git is installed but `git init`, `git add .`, or `git commit` fails:",
         "If Git is installed but `git init` or `git commit` fails:",
+    )
+    blocking_fallback = (
+        "If the extension scripts are not found, STOP with a blocking installation error. Do not run an inline "
+        "fallback: the managed scripts own the Git availability and existing-repository guards."
+    )
+    unsafe_fallback = (
+        "If the extension scripts are not found, fall back to:\n"
+        "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`"
+    )
+    v091_fallback = (
+        "If the extension scripts are not found, fall back to:\n"
+        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`"
+    )
+    initialize_path = required(relative)
+    initialize_text = pending.get(
+        initialize_path, initialize_path.read_text(encoding="utf-8")
+    )
+    fallback_counts = {
+        fallback: initialize_text.count(fallback)
+        for fallback in (blocking_fallback, unsafe_fallback, v091_fallback)
+    }
+    if fallback_counts[blocking_fallback] == 1 and sum(fallback_counts.values()) == 1:
+        continue
+    if fallback_counts[blocking_fallback] == 0 and sum(fallback_counts.values()) == 1:
+        legacy_fallback = next(
+            fallback for fallback, count in fallback_counts.items() if count == 1
+        )
+        replace(relative, legacy_fallback, blocking_fallback)
+        continue
+    raise SystemExit(
+        f"speckit-bootstrap: upstream artifact changed; Git initialization fallback is unknown in {relative}"
     )
 
 replace(
@@ -2137,8 +2819,75 @@ replace(
     "# Source common functions\n",
     count=1,
 )
+
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "    leading_ws = len(content) - len(content.lstrip())\n"
+    "    leading = content[:leading_ws]\n"
+    "    stripped = content[leading_ws:]",
+    "    stripped = content.lstrip()",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "        return content\n\n"
+    "    if re.search(r\"(?m)^[ \\t]*alwaysApply[ \\t]*:\", fm_text):",
+    "        return stripped\n\n"
+    "    if re.search(r\"(?m)^[ \\t]*alwaysApply[ \\t]*:\", fm_text):",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/python/update_agent_context.py",
+    "    return f\"{leading}{opening}{fm_text}{closing}{sep}{rest}\"",
+    "    return f\"{opening}{fm_text}{closing}{sep}{rest}\"",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    $leading = ''\n"
+    "    $stripped = $Content\n"
+    "    $m = [regex]::Match($Content, '^\\s*')\n"
+    "    if ($m.Success) {\n"
+    "        $leading = $m.Value\n"
+    "        $stripped = $Content.Substring($m.Length)\n"
+    "    }",
+    "    $stripped = $Content.TrimStart()",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "        return $Content\n"
+    "    }\n\n"
+    "    if ([regex]::IsMatch($fmText, '(?m)^[ \\t]*alwaysApply[ \\t]*:')) {",
+    "        return $stripped\n"
+    "    }\n\n"
+    "    if ([regex]::IsMatch($fmText, '(?m)^[ \\t]*alwaysApply[ \\t]*:')) {",
+)
+replace(
+    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+    "    return \"$leading$opening$fmText$closing$sep$rest\"",
+    "    return \"$opening$fmText$closing$sep$rest\"",
+)
+
 replace(
     ".specify/scripts/bash/common.sh",
+    "    printf '$speckit%s%s\\n' \"$separator\" \"$command_name\"",
+    "    local prefix=\"/\"\n"
+    "    local integration_json=\"$repo_root/.specify/integration.json\"\n"
+    "    local python_spec=\"\"\n"
+    "    local -a python_cmd=()\n"
+    "    if [ -f \"$integration_json\" ] && python_spec=$(_python3_command); then\n"
+    "        read -r -a python_cmd <<< \"$python_spec\"\n"
+    "        if SPECKIT_INTEGRATION=\"$integration_json\" \"${python_cmd[@]}\" -c \"\n"
+    "import json, os, sys\n"
+    "with open(os.environ['SPECKIT_INTEGRATION'], encoding='utf-8') as fh:\n"
+    "    state = json.load(fh)\n"
+    "key = state.get('default_integration') or state.get('integration')\n"
+    "entry = state.get('integration_settings', {}).get(key, {})\n"
+    "sys.exit(0 if entry.get('parsed_options', {}).get('skills') is True else 1)\n"
+    "\" 2>/dev/null; then\n"
+    "            prefix='$'\n"
+    "        fi\n"
+    "    fi\n\n"
+    "    printf '%s%s%s\\n' \"$prefix\" \"speckit$separator\" \"$command_name\"",
+)
+manifest_upstream = (
     "                local candidate=\"\"\n"
     "                if [ -n \"$manifest_file\" ]; then\n"
     "                    case \"$manifest_file\" in\n"
@@ -2149,7 +2898,9 @@ replace(
     "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
     "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
     "                fi\n"
-    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
+)
+manifest_v091 = (
     "                local candidate=\"\"\n"
     "                local declared_file=\"$manifest_file\"\n"
     "                if [ -n \"$manifest_file\" ]; then\n"
@@ -2165,7 +2916,281 @@ replace(
     "                    echo \"Error: preset '$preset_id' declares template '$template_name' with unresolvable file '$declared_file'\" >&2\n"
     "                    return 2\n"
     "                fi\n"
-    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
+)
+manifest_hardened = (
+    "                local candidate=\"\"\n"
+    "                local declared_file=\"$manifest_file\"\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    case \"$manifest_file\" in\n"
+    "                        /*|..|../*|*/..|*/../*) manifest_file=\"\" ;;\n"
+    "                    esac\n"
+    "                fi\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
+    "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = true ] && [ -n \"$declared_file\" ]; then\n"
+    "                    echo \"Error: preset '$preset_id' declares template '$template_name' with unresolvable file '$declared_file'\" >&2\n"
+    "                    return 2\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
+)
+common_path = required(".specify/scripts/bash/common.sh")
+common_text = pending.get(common_path, common_path.read_text(encoding="utf-8"))
+manifest_counts = {
+    form: common_text.count(form)
+    for form in (manifest_upstream, manifest_v091, manifest_hardened)
+}
+if manifest_counts[manifest_hardened] == 1 and sum(manifest_counts.values()) == 1:
+    pass
+elif manifest_counts[manifest_hardened] == 0 and sum(manifest_counts.values()) == 1:
+    legacy_manifest = next(
+        form for form, count in manifest_counts.items() if count == 1
+    )
+    replace(".specify/scripts/bash/common.sh", legacy_manifest, manifest_hardened)
+else:
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; preset manifest fallback is unknown"
+    )
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "# Resolve a template name to a file path using the priority stack:\n",
+    "_resolve_preset_candidate() {\n"
+    "    local presets_dir=\"$1\" preset_id=\"$2\" candidate=\"$3\"\n"
+    "    [ -f \"$candidate\" ] || return 1\n"
+    "    local python_spec=\"\"\n"
+    "    local -a python_cmd=()\n"
+    "    if ! python_spec=$(_python3_command); then\n"
+    "        echo \"Error: Python 3 is required to validate preset template paths\" >&2\n"
+    "        return 2\n"
+    "    fi\n"
+    "    read -r -a python_cmd <<< \"$python_spec\"\n"
+    "    local resolved=\"\"\n"
+    "    if ! resolved=$(SPECKIT_PRESETS_ROOT=\"$presets_dir\" SPECKIT_PRESET_ID=\"$preset_id\" "
+    "SPECKIT_PRESET_CANDIDATE=\"$candidate\" \"${python_cmd[@]}\" -c \"\n"
+    "import os, sys\n"
+    "from pathlib import Path\n"
+    "try:\n"
+    "    presets_root = Path(os.environ['SPECKIT_PRESETS_ROOT']).resolve(strict=True)\n"
+    "    preset_root = (presets_root / os.environ['SPECKIT_PRESET_ID']).resolve(strict=True)\n"
+    "    preset_root.relative_to(presets_root)\n"
+    "    candidate = Path(os.environ['SPECKIT_PRESET_CANDIDATE']).resolve(strict=True)\n"
+    "    candidate.relative_to(preset_root)\n"
+    "    if not candidate.is_file():\n"
+    "        raise ValueError('candidate is not a file')\n"
+    "    print(candidate)\n"
+    "except (OSError, ValueError):\n"
+    "    sys.exit(1)\n"
+    "\" 2>/dev/null); then\n"
+    "        echo \"Error: preset '$preset_id' template escapes its preset directory\" >&2\n"
+    "        return 2\n"
+    "    fi\n"
+    "    printf '%s\\n' \"$resolved\"\n"
+    "}\n\n"
+    "# Resolve a template name to a file path using the priority stack:\n",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                        local candidate=\"$presets_dir/$preset_id/templates/${template_name}.md\"\n"
+    "                        [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                        candidate=\"$presets_dir/$preset_id/${template_name}.md\"\n"
+    "                        [ -f \"$candidate\" ] && echo \"$candidate\" && return 0",
+    "                        local candidate=\"$presets_dir/$preset_id/templates/${template_name}.md\"\n"
+    "                        local resolved_candidate=\"\"\n"
+    "                        if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                            echo \"$resolved_candidate\"\n"
+    "                            return 0\n"
+    "                        elif [ \"$?\" -eq 2 ]; then\n"
+    "                            return 2\n"
+    "                        fi\n"
+    "                        candidate=\"$presets_dir/$preset_id/${template_name}.md\"\n"
+    "                        if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                            echo \"$resolved_candidate\"\n"
+    "                            return 0\n"
+    "                        elif [ \"$?\" -eq 2 ]; then\n"
+    "                            return 2\n"
+    "                        fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                candidate=\"$preset/${template_name}.md\"\n"
+    "                [ -f \"$candidate\" ] && echo \"$candidate\" && return 0",
+    "                local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                local resolved_candidate=\"\"\n"
+    "                if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$(basename \"$preset\")\" \"$candidate\"); then\n"
+    "                    echo \"$resolved_candidate\"\n"
+    "                    return 0\n"
+    "                elif [ \"$?\" -eq 2 ]; then\n"
+    "                    return 2\n"
+    "                fi\n"
+    "                candidate=\"$preset/${template_name}.md\"\n"
+    "                if resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$(basename \"$preset\")\" \"$candidate\"); then\n"
+    "                    echo \"$resolved_candidate\"\n"
+    "                    return 0\n"
+    "                elif [ \"$?\" -eq 2 ]; then\n"
+    "                    return 2\n"
+    "                fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "                if [ -n \"$candidate\" ]; then\n"
+    "                    layer_paths+=(\"$candidate\")",
+    "                if [ -n \"$candidate\" ]; then\n"
+    "                    local resolved_candidate=\"\"\n"
+    "                    if ! resolved_candidate=$(_resolve_preset_candidate \"$presets_dir\" \"$preset_id\" \"$candidate\"); then\n"
+    "                        return 2\n"
+    "                    fi\n"
+    "                    candidate=\"$resolved_candidate\"\n"
+    "                    layer_paths+=(\"$candidate\")",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "            else\n"
+    "                # python3 failed (missing, or registry parse error) — fall back to unordered directory scan\n"
+    "                for preset in \"$presets_dir\"/*/; do\n"
+    "                    [ -d \"$preset\" ] || continue\n"
+    "                    local candidate=\"$preset/templates/${template_name}.md\"\n"
+    "                    [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                    candidate=\"$preset/${template_name}.md\"\n"
+    "                    [ -f \"$candidate\" ] && echo \"$candidate\" && return 0\n"
+    "                done\n"
+    "            fi",
+    "            else\n"
+    "                echo \"Error: invalid preset registry $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        else\n"
+    "            # Fallback: alphabetical directory order (no python3 available)\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+    "        else\n"
+    "            if [ -f \"$registry_file\" ]; then\n"
+    "                echo \"Error: Python 3 is required to read $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "\" 2>/dev/null); then\n"
+    "                registry_parsed=true\n"
+    "            fi\n"
+    "        fi\n"
+    "        if [ \"$registry_parsed\" = false ]; then",
+    "\" 2>/dev/null); then\n"
+    "                registry_parsed=true\n"
+    "            else\n"
+    "                echo \"Error: invalid preset registry $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "        fi\n"
+    "        if [ \"$registry_parsed\" = false ]; then",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        if [ \"$registry_parsed\" = false ]; then\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+    "        if [ \"$registry_parsed\" = false ]; then\n"
+    "            if [ -f \"$registry_file\" ] && [ \"${#python_cmd[@]}\" -eq 0 ]; then\n"
+    "                echo \"Error: Python 3 is required to read $registry_file\" >&2\n"
+    "                return 2\n"
+    "            fi\n"
+    "            for preset in \"$presets_dir\"/*/; do",
+)
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "    presets = data.get('presets', {})\n"
+    "    def priority(meta):",
+    "    presets = data.get('presets', {})\n"
+    "    if not isinstance(presets, dict):\n"
+    "        raise ValueError('preset registry presets must be a mapping')\n"
+    "    for pid, meta in presets.items():\n"
+    "        if not isinstance(pid, str) or not re.fullmatch(r'[a-z0-9-]+', pid):\n"
+    "            raise ValueError('preset id must match [a-z0-9-]+')\n"
+    "        if not isinstance(meta, dict):\n"
+    "            raise ValueError(f'preset metadata for {pid} must be a mapping')\n"
+    "        if not isinstance(meta.get('enabled', True), bool):\n"
+    "            raise ValueError(f'preset enabled for {pid} must be boolean')\n"
+    "    def priority(meta):",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        if isinstance(meta, dict) and bool(meta.get('enabled', True)) and re.fullmatch(r'[a-z0-9-]+', pid):\n"
+    "            print(pid)",
+    "        if meta.get('enabled', True):\n"
+    "            print(pid)",
+)
+replace(
+    ".specify/scripts/bash/common.sh",
+    "        else\n"
+    "            echo \"Error: invalid extension registry $ext_dir/.registry\" >&2\n"
+    "            rm -f \"$py_stderr\"\n"
+    "            return 1\n"
+    "        fi",
+    "        else\n"
+    "            if grep -q '^registry_invalid:' \"$py_stderr\" 2>/dev/null; then\n"
+    "                echo \"Error: invalid extension registry $ext_dir/.registry: $(sed -n '1s/^registry_invalid: //p' \"$py_stderr\")\" >&2\n"
+    "            else\n"
+    "                echo \"Error: failed to enumerate extensions in $ext_dir: $(cat \"$py_stderr\")\" >&2\n"
+    "            fi\n"
+    "            rm -f \"$py_stderr\"\n"
+    "            return 1\n"
+    "        fi",
+)
+
+replace(
+    ".specify/scripts/bash/common.sh",
+    "ranked = []\n"
+    "for ext_id, meta in registered.items():\n"
+    "    if isinstance(ext_id, str) and re.fullmatch(r'[a-z0-9-]+', ext_id) and isinstance(meta, dict) and bool(meta.get('enabled', True)):\n"
+    "        ranked.append((priority(meta.get('priority')), ext_id))",
+    "ranked = []\n"
+    "for ext_id, meta in registered.items():\n"
+    "    if not isinstance(ext_id, str) or not re.fullmatch(r'[a-z0-9-]+', ext_id):\n"
+    "        print('registry_invalid: extension id must match [a-z0-9-]+', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    if not isinstance(meta, dict):\n"
+    "        print(f'registry_invalid: metadata for {ext_id} must be a mapping', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    enabled = meta.get('enabled', True)\n"
+    "    if not isinstance(enabled, bool):\n"
+    "        print(f'registry_invalid: enabled for {ext_id} must be boolean', file=sys.stderr)\n"
+    "        sys.exit(1)\n"
+    "    if enabled:\n"
+    "        ranked.append((priority(meta.get('priority')), ext_id))",
+)
+
+replace(
+    ".specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1",
+    "if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {\n"
+    "    # Call without parameters for compatibility with core common.ps1 (no -RepoRoot param)\n"
+    "    # and git-common.ps1 (has -RepoRoot param with default).\n"
+    "    $hasGit = Test-HasGit\n"
+    "} else {",
+    "if (Get-Command Test-HasGit -ErrorAction SilentlyContinue) {\n"
+    "    Push-Location $repoRoot\n"
+    "    try {\n"
+    "        $hasGit = Test-HasGit\n"
+    "    } finally {\n"
+    "        Pop-Location\n"
+    "    }\n"
+    "} else {",
+)
+
+replace(
+    ".specify/extensions/git/scripts/python/create_new_feature_branch.py",
+    "SCRIPT_DIR = Path(__file__).resolve().parent\n",
+    "# Keep dynamically imported managed helpers out of the locked tree.\n"
+    "sys.dont_write_bytecode = True\n\n"
+    "SCRIPT_DIR = Path(__file__).resolve().parent\n",
+    count=1,
 )
 
 for path, content in pending.items():

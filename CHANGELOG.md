@@ -4,8 +4,84 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+- No entries yet.
+
+## [0.9.7] - 2026-08-30
+
 ### Fixed
 
+- Make direct planning and implementation fail closed on missing mandatory
+  clarification, task-to-issue ownership, and unknown risk-lane evidence.
+- Stop conditional mandatory hooks when HookExecutor is unavailable instead of
+  silently skipping policy or validation work.
+- Prevent convergence from turning pre-existing shared baseline code into
+  removal tasks without current-slice provenance.
+- Preserve a nested Spec Kit project root for numbering and configuration when
+  its Git repository root is a parent directory.
+
+## [0.9.6] - 2026-08-30
+
+### Fixed
+
+- Keep generated checklist and issue-sync guidance safe when optional feature
+  documents are absent or task IDs repeat.
+- Reject preset-template symlink escapes and malformed preset registries,
+  canonicalize nested PowerShell links and Git Bash message-file paths, and
+  preserve executable command syntax across skill and slash integrations.
+- Normalize generated MDC frontmatter to the start of the file.
+
+## [0.9.5] - 2026-08-30
+
+### Fixed
+
+- Migrate the exact `v0.9.4` intermediate Python auto-commit form so the
+  conventional-message guard runs once, after the clean-worktree short circuit.
+
+## [0.9.4] - 2026-08-30
+
+### Fixed
+
+- Migrate the remaining known `v0.9.1` Python auto-commit cleanup and preset
+  manifest path forms while rejecting mixed, duplicate, or unknown states.
+
+## [0.9.3] - 2026-08-30
+
+### Fixed
+
+- Migrate the known `v0.9.1` safe Git-initialization fallback to the `v0.9.2`
+  blocking form while continuing to fail closed for unknown partial upstream
+  states.
+
+## [0.9.2] - 2026-08-30
+
+### Changed
+
+- Require generated checklist, Git feature, Git initialization, auto-commit and
+  convergence guidance to preserve reviewer ownership, use structured arguments,
+  and stop before unsafe or unrelated commits.
+
+### Fixed
+
+- Fail closed for malformed post-hook configuration, grade every convergence
+  finding, preserve caller-owned external commit-message files while rejecting
+  worktree-local ones, and keep clean-worktree conventional auto-commit behavior
+  consistent across ports.
+- Resolve PowerShell plan candidates through symlinks, remove duplicate Python
+  persist hints, surface extension enumeration diagnostics, and reject every
+  parent-path form in declared preset templates.
+
+## [0.9.1] - 2026-08-30
+
+### Changed
+
+- Require explicit canonical task ownership when deduplicating issues, reconcile
+  closed issue matches, and sync convergence-appended tasks before implementation.
+
+### Fixed
+
+- Validate every extension-registry entry fail-closed, probe PowerShell Git state
+  in the resolved override root, and disable bytecode before dynamically loading
+  managed Python helpers.
 - Retry immutable release verification for up to 40 seconds while GitHub
   finishes publishing release attestations.
 

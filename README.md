@@ -57,7 +57,7 @@ optional Ponytail setup.
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh | bash
 ```
 
 The first-stage installer comes from the immutable release tag. It resolves the
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.0/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.0 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.7 bash
 ```
 
 > [!TIP]
@@ -139,7 +139,8 @@ project-local skill digest. A healthy installation reports
   repository's `.agents/skills`, so each project uses its own locked version.
 - **Governed generated workflows.** Bootstrap applies fail-closed guards for
   clarification, checklist/analyze gates, safe feature paths, canonical issue
-  sync, validation handoff, and reviewed Git initialization.
+  sync, conditional mandatory hooks, validation handoff, and reviewed Git
+  initialization.
 - **Reproducible refreshes.** The lock records versions, commit refs, source
   URLs, workflow hashes, extension trees, and managed skill digests.
 - **Safe GitHub tracking.** The bundled
@@ -235,6 +236,11 @@ $speckit-converge
 gates you can apply according to risk. Use `$speckit-taskstoissues` for tracked
 feature work with a GitHub remote; skip it for read-only, documentation-only,
 or tiny direct changes.
+
+Generated planning and implementation skills fail closed when mandatory
+clarification, a recognized risk lane, current analyze evidence, or required
+task-to-issue ownership is missing. In monorepos, feature numbering and Git
+configuration remain scoped to the nested directory that owns `.specify/`.
 
 For significant or high-risk work, run `$speckit-converge` after implementation.
 If it appends tasks, run `$speckit-implement` and `$speckit-converge` again
