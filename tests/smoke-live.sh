@@ -40,6 +40,25 @@ git -C "$PROJECT" add README.md
 git -C "$PROJECT" commit -qm 'Initialize smoke fixture'
 
 export SPEC_KIT_VERSION SPECKIT_GITHUB_ISSUE_CANON_VERSION
+# Verify the production default resolves the current Ponytail release without
+# mutating the runner's Codex state; the apply smoke below uses an explicit opt-out.
+DEFAULT_PLAN="$SANDBOX/default-plan.json"
+env SPECKIT_PONYTAIL= "$BOOTSTRAP" "$PROJECT" --dry-run --json >"$DEFAULT_PLAN"
+LATEST_PONYTAIL="$(git ls-remote --tags --sort='v:refname' \
+  https://github.com/DietrichGebert/ponytail.git 'refs/tags/v*' |
+  sed -n 's#.*refs/tags/\(v[^{}]*\)$#\1#p' | tail -1)"
+python3 - "$DEFAULT_PLAN" "$LATEST_PONYTAIL" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    plan = json.load(handle)
+expected = sys.argv[2]
+actual = plan["ponytail"]["version"]
+if not expected or actual != expected:
+    raise SystemExit(f"smoke-live: default Ponytail version {actual!r} != latest {expected!r}")
+PY
+
 # Keep live smoke isolated from the developer's Codex plugin state; production
 # bootstrap runs enable Ponytail by default unless this explicit opt-out is set.
 export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
