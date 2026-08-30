@@ -58,7 +58,7 @@ speckit-bootstrap .
 ### 1. Установите или обновите
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh | bash
 ```
 
 Первый установщик загружается из immutable release tag. Он определяет последний
@@ -79,8 +79,8 @@ speckit-bootstrap --version
 Повторный запуск установщика обновляет bootstrap. Для конкретной версии:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.8.0 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.7 bash
 ```
 
 > [!TIP]
@@ -139,6 +139,9 @@ workflow, payload расширений, опциональное состоян�
 - **Workflow для Codex.** Сгенерированные навыки `speckit-*` остаются в
   `.agents/skills` репозитория, поэтому каждый проект использует свою
   зафиксированную версию.
+- **Управляемый generated workflow.** Bootstrap добавляет fail-closed guards
+  для clarify, checklist/analyze, безопасных feature paths, канонического issue
+  sync, validation handoff и проверяемой инициализации Git.
 - **Воспроизводимые обновления.** Lock хранит версии, commit refs, URL
   источников, hashes workflow, деревья расширений и digests навыков.
 - **Безопасный GitHub-трекинг.** Встроенный
@@ -195,7 +198,7 @@ speckit-bootstrap . --frozen
 Frozen-режим сохраняет lock неизменным и завершает работу с ошибкой, если
 зафиксированные исполняемые данные отличаются.
 
-Lock-файлы v0.7 используют schema v2. Один раз запустите v0.8 без `--frozen`,
+Lock-файлы v0.7 используют schema v2. Один раз запустите v0.9 без `--frozen`,
 чтобы пересоздать их в schema v3, и только затем снова включайте frozen-режим.
 Миграция сохраняет все пользовательские копии `speckit-*` и предупреждает,
 когда дубликаты стоит удалить вручную: проектные файлы не дают права удалять
@@ -381,8 +384,8 @@ bash tests/ci-local.sh
 Запустите закреплённый end-to-end smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.15.2 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
+SPEC_KIT_VERSION=v1.0.1 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.2 \
   bash tests/smoke-live.sh
 ```
 

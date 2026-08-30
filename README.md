@@ -57,7 +57,7 @@ optional Ponytail setup.
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh | bash
 ```
 
 The first-stage installer comes from the immutable release tag. It resolves the
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.8.0/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.8.0 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.7/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.7 bash
 ```
 
 > [!TIP]
@@ -137,6 +137,10 @@ project-local skill digest. A healthy installation reports
   and source commit is reused without a forced reinstall.
 - **Codex-native workflows.** Generated `speckit-*` skills stay in the
   repository's `.agents/skills`, so each project uses its own locked version.
+- **Governed generated workflows.** Bootstrap applies fail-closed guards for
+  clarification, checklist/analyze gates, safe feature paths, canonical issue
+  sync, conditional mandatory hooks, validation handoff, and reviewed Git
+  initialization.
 - **Reproducible refreshes.** The lock records versions, commit refs, source
   URLs, workflow hashes, extension trees, and managed skill digests.
 - **Safe GitHub tracking.** The bundled
@@ -193,7 +197,7 @@ speckit-bootstrap . --frozen
 Frozen mode preserves the lock and fails if locked executable inputs have
 drifted.
 
-Locks created by v0.7 use schema v2. Run v0.8 once without `--frozen` to
+Locks created by v0.7 use schema v2. Run v0.9 once without `--frozen` to
 regenerate them as schema v3 before using frozen mode again. That migration
 preserves all user-level `speckit-*` copies and warns when manual duplicate
 cleanup may be useful; project files never authorize deletion from your home
@@ -232,6 +236,11 @@ $speckit-converge
 gates you can apply according to risk. Use `$speckit-taskstoissues` for tracked
 feature work with a GitHub remote; skip it for read-only, documentation-only,
 or tiny direct changes.
+
+Generated planning and implementation skills fail closed when mandatory
+clarification, a recognized risk lane, current analyze evidence, or required
+task-to-issue ownership is missing. In monorepos, feature numbering and Git
+configuration remain scoped to the nested directory that owns `.specify/`.
 
 For significant or high-risk work, run `$speckit-converge` after implementation.
 If it appends tasks, run `$speckit-implement` and `$speckit-converge` again
@@ -380,8 +389,8 @@ bash tests/ci-local.sh
 Run the pinned end-to-end bootstrap smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v0.15.2 \
-  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.1 \
+SPEC_KIT_VERSION=v1.0.1 \
+  SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.2 \
   bash tests/smoke-live.sh
 ```
 

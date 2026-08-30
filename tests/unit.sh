@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.8.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.7" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -443,7 +443,7 @@ sha = "a" * 40
 digest = "b" * 64
 data = {
     "schema_version": 3,
-    "bootstrap_version": "0.8.0",
+    "bootstrap_version": "0.8.1",
     "spec_kit": {"version": "v9.9.9", "ref": sha},
     "github_issue_canon": {
         "version": "custom",
@@ -702,7 +702,7 @@ assert "Current Codex and latest Ponytail" in canary
 assert "npm ci --ignore-scripts --prefix tests/canary" in canary
 assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
 assert "GITHUB_TOKEN: ${{ github.token }}" in ci
-assert "SPEC_KIT_VERSION: v0.15.2" in ci
+assert "SPEC_KIT_VERSION: v1.0.1" in ci
 assert "zizmor==1.29.0" in ci
 assert "update-types:" in dependabot
 assert "- major" not in dependabot
@@ -818,7 +818,59 @@ test_cache_cleanup_removes_completed_workflow_lock() (
   [[ ! -e "$PROJECT_DIR/.specify/workflows/.cache" ]]
 )
 
-printf '1..26\n'
+test_generated_hardening_contract_is_installed_before_lock_capture() {
+  python3 - "$BOOTSTRAP" <<'PY'
+import sys
+from pathlib import Path
+
+text = Path(sys.argv[1]).read_text(encoding="utf-8")
+call = "  ensure_governed_generated_artifacts\n"
+capture = "    capture_project_dependency_state\n"
+assert text.count(call) == 1
+assert text.index(call) < text.index(capture)
+assert 'if [[ "$FROZEN" -eq 0 ]]; then\n    ensure_governed_generated_artifacts' in text
+for marker in (
+    "MUST NOT skip clarify",
+    "existing spec is updated in place",
+    "project canon",
+    "STOP with a blocking configuration error",
+    "--template cannot be combined with --paths-only",
+    "unresolvable file",
+    "commit_style is 'conventional'",
+    "existing project files remain unstaged for review",
+    "upstream mandatory hook guard changed",
+    "updated.count(mandatory_hook_guard) == 0",
+    "Spec Kit task IDs: T001, T002",
+    "run `$speckit-taskstoissues` first",
+    "registry_invalid: enabled for {ext_id} must be boolean",
+    "Push-Location $repoRoot",
+    "sys.dont_write_bytecode = True",
+    "Load minimal question context",
+    "documents listed in `AVAILABLE_DOCS`",
+    "Deduplicate the task IDs before processing them",
+    "Never remove an existing checklist",
+    "never auto-committed",
+    "native argument array/binding",
+    "blocking installation error",
+    "Numbering is per-project only",
+    "Caller owns and cleans up the transport file",
+    "message file must be outside the Git worktree",
+    "if args.json_mode",
+    "failed to enumerate extensions",
+    "Resolve-ContextPath -Root $ProjectRoot",
+    "linksResolved",
+    "_resolve_preset_candidate",
+    "preset enabled for {pid} must be boolean",
+    "cygpath -am",
+    "entry.get('parsed_options', {}).get('skills') is True",
+    "return stripped",
+    "pending.items()",
+):
+    assert marker in text, marker
+PY
+}
+
+printf '1..27\n'
 run_test 'version and sourceability' test_version_and_sourceability
 run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
@@ -845,6 +897,7 @@ run_test 'workflow install failure is fatal' test_workflow_install_failure_is_fa
 run_test 'workflow install uses immutable source noninteractively' test_workflow_install_uses_immutable_source_noninteractively
 run_test 'workflow refresh skips matching immutable source' test_workflow_refresh_skips_matching_immutable_source
 run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
+run_test 'generated hardening is installed before lock capture' test_generated_hardening_contract_is_installed_before_lock_capture
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2

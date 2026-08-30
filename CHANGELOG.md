@@ -6,6 +6,124 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.7] - 2026-08-30
+
+### Fixed
+
+- Make direct planning and implementation fail closed on missing mandatory
+  clarification, task-to-issue ownership, and unknown risk-lane evidence.
+- Stop conditional mandatory hooks when HookExecutor is unavailable instead of
+  silently skipping policy or validation work.
+- Prevent convergence from turning pre-existing shared baseline code into
+  removal tasks without current-slice provenance.
+- Preserve a nested Spec Kit project root for numbering and configuration when
+  its Git repository root is a parent directory.
+
+## [0.9.6] - 2026-08-30
+
+### Fixed
+
+- Keep generated checklist and issue-sync guidance safe when optional feature
+  documents are absent or task IDs repeat.
+- Reject preset-template symlink escapes and malformed preset registries,
+  canonicalize nested PowerShell links and Git Bash message-file paths, and
+  preserve executable command syntax across skill and slash integrations.
+- Normalize generated MDC frontmatter to the start of the file.
+
+## [0.9.5] - 2026-08-30
+
+### Fixed
+
+- Migrate the exact `v0.9.4` intermediate Python auto-commit form so the
+  conventional-message guard runs once, after the clean-worktree short circuit.
+
+## [0.9.4] - 2026-08-30
+
+### Fixed
+
+- Migrate the remaining known `v0.9.1` Python auto-commit cleanup and preset
+  manifest path forms while rejecting mixed, duplicate, or unknown states.
+
+## [0.9.3] - 2026-08-30
+
+### Fixed
+
+- Migrate the known `v0.9.1` safe Git-initialization fallback to the `v0.9.2`
+  blocking form while continuing to fail closed for unknown partial upstream
+  states.
+
+## [0.9.2] - 2026-08-30
+
+### Changed
+
+- Require generated checklist, Git feature, Git initialization, auto-commit and
+  convergence guidance to preserve reviewer ownership, use structured arguments,
+  and stop before unsafe or unrelated commits.
+
+### Fixed
+
+- Fail closed for malformed post-hook configuration, grade every convergence
+  finding, preserve caller-owned external commit-message files while rejecting
+  worktree-local ones, and keep clean-worktree conventional auto-commit behavior
+  consistent across ports.
+- Resolve PowerShell plan candidates through symlinks, remove duplicate Python
+  persist hints, surface extension enumeration diagnostics, and reject every
+  parent-path form in declared preset templates.
+
+## [0.9.1] - 2026-08-30
+
+### Changed
+
+- Require explicit canonical task ownership when deduplicating issues, reconcile
+  closed issue matches, and sync convergence-appended tasks before implementation.
+
+### Fixed
+
+- Validate every extension-registry entry fail-closed, probe PowerShell Git state
+  in the resolved override root, and disable bytecode before dynamically loading
+  managed Python helpers.
+- Retry immutable release verification for up to 40 seconds while GitHub
+  finishes publishing release attestations.
+
+## [0.9.0] - 2026-08-30
+
+### Added
+
+- Harden generated Spec Kit skills and scripts with fail-closed gates for
+  mandatory clarification, reviewer-owned checklists, analyze evidence,
+  validation handoff, canonical issue sync, safe feature paths, hook parsing,
+  template composition, and scoped ignore-file changes.
+
+### Changed
+
+- Validate the stable compatibility lane against Spec Kit v1.0.1 and
+  `github-issue-canon` v0.3.2.
+- Initialize new Git repositories with an empty initial commit so existing
+  project files remain unstaged until explicitly reviewed.
+
+### Fixed
+
+- Recognize an unchanged locked generated state during repeat refreshes instead
+  of treating bootstrap-owned hardening as a user integration conflict.
+- Keep frozen replay mutation-free by applying generated hardening only during
+  non-frozen refreshes before the new lock is captured.
+- Validate every generated hardening anchor before writing any transformed file,
+  propagate transformation failures explicitly, and reject locked issue-canon
+  registry metadata drift instead of blessing it.
+- Bring the Python auto-commit port in line with the documented conventional
+  message-file contract and parse a valid final config line without requiring a
+  trailing newline.
+
+## [0.8.1] - 2026-08-30
+
+### Fixed
+
+- Add a live regression gate that imports the installed Python-backed
+  issue-canon command and then re-runs `--doctor`, preventing runtime bytecode
+  from silently invalidating a healthy extension lock.
+- Validate the bootstrap compatibility lane against `github-issue-canon`
+  v0.3.2, whose commands no longer write bytecode into the locked payload.
+
 ## [0.8.0] - 2026-08-04
 
 ### Added
