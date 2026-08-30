@@ -52,18 +52,18 @@ speckit-bootstrap .
 ## Быстрый старт
 
 Нужны macOS или Ubuntu с `git`, `curl`, `python3` и
-[`uv`](https://docs.astral.sh/uv/). `codex` CLI требуется только для
-опциональной установки Ponytail.
+[`uv`](https://docs.astral.sh/uv/). `codex` CLI требуется, если Ponytail
+явно не отключён.
 
 ### 1. Установите или обновите
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.8/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/main/install.sh | bash
 ```
 
-Первый установщик загружается из immutable release tag. Он определяет последний
-GitHub Release, скачивает исполняемый файл и его SHA-256, проверяет checksum и
-синтаксис shell, а затем атомарно устанавливает команду в:
+Rolling-установщик из `main` определяет последний GitHub Release, скачивает
+исполняемый файл и его SHA-256, проверяет checksum и синтаксис shell, а затем
+атомарно устанавливает команду в:
 
 ```text
 ~/.local/bin/speckit-bootstrap
@@ -79,8 +79,8 @@ speckit-bootstrap --version
 Повторный запуск установщика обновляет bootstrap. Для конкретной версии:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.8/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.8 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.9 bash
 ```
 
 > [!TIP]
@@ -126,7 +126,7 @@ speckit-bootstrap . --doctor
 ```
 
 `--doctor` ничего не изменяет. Он проверяет источник CLI, зафиксированный
-workflow, payload расширений, опциональное состояние Ponytail, инструкции
+workflow, payload расширений, состояние Ponytail, инструкции
 проекта и digest каждого project-local навыка. Исправная установка сообщает
 `speckit-bootstrap: doctor OK`.
 
@@ -148,9 +148,10 @@ workflow, payload расширений, опциональное состоян�
   [`github-issue-canon`](https://github.com/yshishenya/spec-kit-ext-github-issue-canon)
   добавляет формы задач, шаблон pull request, validation hooks и правила
   closeout.
-- **Опциональную интеграцию Ponytail.** С `--with-ponytail` Codex управляет жизненным циклом плагина
-  [`Ponytail`](https://github.com/DietrichGebert/ponytail), а bootstrap закрепляет
-  его источник и поддерживает инструкции проекта в актуальном виде.
+- **Ponytail по умолчанию.** Bootstrap устанавливает последнюю версию плагина
+  [`Ponytail`](https://github.com/DietrichGebert/ponytail) для Codex, закрепляет
+  неизменяемый источник и поддерживает инструкции проекта в актуальном виде.
+  Для явного отказа используйте `--skip-ponytail` или `SPECKIT_PONYTAIL=0`.
 - **Сохранность пользовательского состояния.** Существующие каталоги,
   сторонние навыки, инструкции и GitHub-шаблоны сохраняются.
 - **Fail-closed проверки.** Drift версий и checksum, пропавшие управляемые файлы
@@ -165,7 +166,7 @@ flowchart LR
     A["speckit-bootstrap ."] --> B["Официальный GitHub Spec Kit<br/>тег разрешён в commit SHA"]
     A --> C["Навыки Codex<br/>.agents/skills"]
     A --> D["GitHub issue canon<br/>шаблоны + hooks"]
-    A -. опционально .-> E["Плагин Ponytail<br/>pin источника + инструкции"]
+    A --> E["Плагин Ponytail<br/>pin источника + инструкции"]
     B --> F["Воспроизводимый lock"]
     C --> F
     D --> F
@@ -184,7 +185,7 @@ Bootstrap никогда не изменяет upstream-репозитории. 
 1. Определяет последние разрешённые release tags.
 2. Разрешает каждый тег в неизменяемый commit.
 3. Устанавливает и проверяет immutable workflow, расширения, project-local
-   навыки и опциональный плагин.
+   навыки и последнюю версию Ponytail.
 4. Записывает точные источники и digests в
    `.specify/speckit-bootstrap.lock.json`.
 5. Проверяет готовую установку перед успешным завершением.
@@ -261,7 +262,9 @@ read-only, документационных и совсем небольших �
 политику разработки, которая согласует агентов, артефакты репозитория и внешний
 трекинг:
 
-- Git auto-commit включён после завершённых документационных этапов:
+- Git auto-commit выполняется без дополнительного подтверждения после
+  завершённых документационных этапов и проверки, что изменены только пути,
+  принадлежащие команде:
   `constitution`, `specify`, `clarify`, `plan`, `checklist`, `tasks` и
   `analyze`.
 - Все hooks `before_*`, а также `after_implement` и `after_taskstoissues`
@@ -288,15 +291,15 @@ speckit-bootstrap [PROJECT_DIR] [OPTIONS]
 
 | Опция | Результат |
 | --- | --- |
-| `--doctor` | Проверить lock-состояние проекта и опциональный Ponytail без изменений |
+| `--doctor` | Проверить lock-состояние проекта и Ponytail без изменений |
 | `--dry-run` | Определить входные версии и показать только план изменений |
 | `--version` | Показать версию bootstrap и завершить работу |
 | `--frozen` | Использовать и проверить версии из lock-файла проекта |
 | `--json` | Оставить в stdout только один машиночитаемый результат |
 | `--keep-local-skills` | Устаревшая no-op опция; локальные навыки сохраняются всегда |
 | `--skip-cli-update` | Использовать уже установленный `specify` CLI |
-| `--skip-ponytail` | Принудительно отключить Ponytail, включённый окружением |
-| `--with-ponytail` | Установить/обновить Ponytail и инструкции проекта |
+| `--skip-ponytail` | Отключить Ponytail и обновление инструкций по умолчанию |
+| `--with-ponytail` | Явно включить Ponytail (оставлено для совместимости) |
 | `-h`, `--help` | Показать полную справку команды |
 
 Полезные рецепты:
@@ -311,8 +314,8 @@ SPEC_KIT_VERSION=vX.Y.Z speckit-bootstrap .
 # Показать служебные install-метаданные для аудита или релиза.
 SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap .
 
-# Явно включить user-level интеграцию Ponytail.
-speckit-bootstrap . --with-ponytail
+# Явно отключить user-level интеграцию Ponytail по умолчанию.
+speckit-bootstrap . --skip-ponytail
 ```
 
 ### Переменные окружения
@@ -324,7 +327,7 @@ speckit-bootstrap . --with-ponytail
 | `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Закрепить release tag issue-canon |
 | `SPECKIT_GITHUB_ISSUE_CANON_URL` | Использовать проверенный пользовательский ZIP |
 | `SPECKIT_PONYTAIL_VERSION` | Закрепить release tag Ponytail |
-| `SPECKIT_PONYTAIL=1` | Включить операции с плагином и инструкциями Ponytail |
+| `SPECKIT_PONYTAIL=0` | Отключить операции с плагином и инструкциями Ponytail по умолчанию |
 | `SPECKIT_TRACK_INSTALL_METADATA=1` | Показать служебные метаданные в Git diff |
 | `SPECKIT_BOOTSTRAP_INSTALL_DIR` | Путь установки; по умолчанию `~/.local/bin` |
 | `SPECKIT_BOOTSTRAP_VERSION` | Release tag bootstrap; по умолчанию `latest` |
@@ -343,7 +346,7 @@ speckit-bootstrap . --with-ponytail
 - `python3`
 - [`uv`](https://docs.astral.sh/uv/)
 
-`codex` CLI требуется только при явном включении Ponytail.
+`codex` CLI требуется, если Ponytail явно не отключён.
 
 Поддерживаемая матрица:
 
@@ -358,7 +361,9 @@ speckit-bootstrap . --with-ponytail
 supply chain, а не как безобидную документацию.
 
 - При установке executable сверяется с опубликованным SHA-256.
-- Первый установщик в документации закреплён на immutable release tag.
+- Rolling-установщик определяет последний release и сверяет скачанный
+  executable с опубликованным SHA-256; для полностью immutable bootstrap можно
+  указать release tag вручную.
 - Внешние release tags разрешаются в неизменяемые commits.
 - Release asset issue-canon сверяется с checksum каталога.
 - Управляемый marketplace Ponytail закрепляет источник плагина на commit.

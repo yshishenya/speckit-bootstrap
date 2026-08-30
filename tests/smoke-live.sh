@@ -40,7 +40,28 @@ git -C "$PROJECT" add README.md
 git -C "$PROJECT" commit -qm 'Initialize smoke fixture'
 
 export SPEC_KIT_VERSION SPECKIT_GITHUB_ISSUE_CANON_VERSION
-export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
+# Verify the production default resolves the current Ponytail release without
+# mutating the runner's Codex state; the apply smoke below uses an explicit opt-out.
+DEFAULT_PLAN="$SANDBOX/default-plan.json"
+env SPECKIT_PONYTAIL= "$BOOTSTRAP" "$PROJECT" --dry-run --json >"$DEFAULT_PLAN"
+LATEST_PONYTAIL="$(git ls-remote --tags --sort='v:refname' \
+  https://github.com/DietrichGebert/ponytail.git 'refs/tags/v*' |
+  sed -n 's#.*refs/tags/\(v[^{}]*\)$#\1#p' | tail -1)"
+python3 - "$DEFAULT_PLAN" "$LATEST_PONYTAIL" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    plan = json.load(handle)
+expected = sys.argv[2]
+actual = plan["ponytail"]["version"]
+if not expected or actual != expected:
+    raise SystemExit(f"smoke-live: default Ponytail version {actual!r} != latest {expected!r}")
+PY
+
+# Keep live smoke isolated from the developer's Codex plugin state; production
+# bootstrap runs enable Ponytail by default unless this explicit opt-out is set.
+export SPECKIT_PONYTAIL=0
 
 "$BOOTSTRAP" "$PROJECT"
 
@@ -343,7 +364,7 @@ grep -Fq "Resolve-ContextPath -Root \$ProjectRoot" "$PROJECT/.specify/extensions
 grep -Fq "\$linksResolved -gt 40" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq "\$segments.Insert(0, \$targetSegments[\$i])" "$PROJECT/.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1"
 grep -Fq 'cygpath -am' "$PROJECT/.specify/extensions/git/scripts/bash/auto-commit.sh"
-if rg -q 'skip hook checking silently' "$PROJECT/.agents/skills"/speckit-*/SKILL.md; then
+if grep -R -q 'skip hook checking silently' "$PROJECT/.agents/skills"; then
   echo 'smoke-live: a generated post-hook still fails open on malformed YAML' >&2
   exit 1
 fi
@@ -757,7 +778,7 @@ from pathlib import Path
 
 skills = Path(sys.argv[1])
 guard_start = "After emitting the block above you MUST actually invoke the hook"
-guard_end = "without confirmation, STOP instead of executing them."
+guard_end = "STOP instead of executing publish, deploy, destructive, or other non-auto-commit state changes."
 for path in sorted(skills.glob("speckit-*/SKILL.md")):
     text = path.read_text(encoding="utf-8")
     if ".specify/extensions.yml" not in text or "EXECUTE_COMMAND" not in text:
