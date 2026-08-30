@@ -6,6 +6,17 @@ All notable changes to this project are documented in this file.
 
 - No entries yet.
 
+## [0.9.6] - 2026-08-30
+
+### Fixed
+
+- Keep generated checklist and issue-sync guidance safe when optional feature
+  documents are absent or task IDs repeat.
+- Reject preset-template symlink escapes and malformed preset registries,
+  canonicalize nested PowerShell links and Git Bash message-file paths, and
+  preserve executable command syntax across skill and slash integrations.
+- Normalize generated MDC frontmatter to the start of the file.
+
 ## [0.9.5] - 2026-08-30
 
 ### Fixed
