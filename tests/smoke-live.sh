@@ -683,7 +683,7 @@ if (
   exit 1
 fi
 grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
-printf 'branch_template: %s\n' "features/${DOLLAR}slug/{number}-{slug}" > \
+printf 'branch_template: %s\n' "features/${DOLLAR}slgu/{number}-{slug}" > \
   "$HARDENING_PROBE/.specify/extensions/git/git-config.yml"
 if (
   cd "$HARDENING_PROBE"
@@ -694,6 +694,26 @@ if (
   exit 1
 fi
 grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+if (
+  cd "$HARDENING_PROBE"
+  python3 .specify/extensions/git/scripts/python/create_new_feature_branch.py \
+    --dry-run --number 999 --short-name shell-placeholder-probe 'shell placeholder probe'
+) >"$BRANCH_ERROR" 2>&1; then
+  echo 'smoke-live: Python accepted an arbitrary dollar-style placeholder' >&2
+  exit 1
+fi
+grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+if command -v pwsh >/dev/null 2>&1; then
+  if (
+    cd "$HARDENING_PROBE"
+    pwsh -NoProfile -File .specify/extensions/git/scripts/powershell/create-new-feature-branch.ps1 \
+      -DryRun -Number 999 -ShortName shell-placeholder-probe 'shell placeholder probe'
+  ) >"$BRANCH_ERROR" 2>&1; then
+    echo 'smoke-live: PowerShell accepted an arbitrary dollar-style placeholder' >&2
+    exit 1
+  fi
+  grep -Fq 'shell-style placeholder' "$BRANCH_ERROR"
+fi
 python3 - \
   "$HARDENING_PROBE/.agents/skills/speckit-clarify/SKILL.md" \
   "$HARDENING_PROBE/.specify/templates/checklist-template.md" <<'PY'
