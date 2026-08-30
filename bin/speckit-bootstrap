@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.3"
+BOOTSTRAP_VERSION="0.9.4"
 
 usage() {
   cat <<'EOF'
@@ -2194,6 +2194,78 @@ if "def _read_commit_style" not in auto_commit_text:
         "            return 1",
     )
 
+auto_commit_text = pending.get(
+    auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
+)
+auto_commit_v091_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            message_file.unlink()\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_hardened_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_final_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_cleanup_counts = {
+    form: auto_commit_text.count(form)
+    for form in (
+        auto_commit_v091_cleanup,
+        auto_commit_hardened_cleanup,
+        auto_commit_final_cleanup,
+    )
+}
+if (
+    (
+        auto_commit_cleanup_counts[auto_commit_hardened_cleanup] == 1
+        or auto_commit_cleanup_counts[auto_commit_final_cleanup] == 1
+    )
+    and sum(auto_commit_cleanup_counts.values()) == 1
+):
+    pass
+elif (
+    auto_commit_cleanup_counts[auto_commit_v091_cleanup] == 1
+    and sum(auto_commit_cleanup_counts.values()) == 1
+):
+    replace(
+        ".specify/extensions/git/scripts/python/auto_commit.py",
+        auto_commit_v091_cleanup,
+        auto_commit_hardened_cleanup,
+    )
+else:
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; Python auto-commit cleanup form is unknown"
+    )
+
 replace(
     ".specify/extensions/git/scripts/bash/auto-commit.sh",
     "            if [ ! -f \"$_message_file\" ]; then\n"
@@ -2464,8 +2536,7 @@ replace(
     "# Source common functions\n",
     count=1,
 )
-replace(
-    ".specify/scripts/bash/common.sh",
+manifest_upstream = (
     "                local candidate=\"\"\n"
     "                if [ -n \"$manifest_file\" ]; then\n"
     "                    case \"$manifest_file\" in\n"
@@ -2476,7 +2547,27 @@ replace(
     "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
     "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
     "                fi\n"
-    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
+)
+manifest_v091 = (
+    "                local candidate=\"\"\n"
+    "                local declared_file=\"$manifest_file\"\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    case \"$manifest_file\" in\n"
+    "                        /*|*../*|../*) manifest_file=\"\" ;;\n"
+    "                    esac\n"
+    "                fi\n"
+    "                if [ -n \"$manifest_file\" ]; then\n"
+    "                    local mf=\"$presets_dir/$preset_id/$manifest_file\"\n"
+    "                    [ -f \"$mf\" ] && candidate=\"$mf\"\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = true ] && [ -n \"$declared_file\" ]; then\n"
+    "                    echo \"Error: preset '$preset_id' declares template '$template_name' with unresolvable file '$declared_file'\" >&2\n"
+    "                    return 2\n"
+    "                fi\n"
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
+)
+manifest_hardened = (
     "                local candidate=\"\"\n"
     "                local declared_file=\"$manifest_file\"\n"
     "                if [ -n \"$manifest_file\" ]; then\n"
@@ -2492,8 +2583,25 @@ replace(
     "                    echo \"Error: preset '$preset_id' declares template '$template_name' with unresolvable file '$declared_file'\" >&2\n"
     "                    return 2\n"
     "                fi\n"
-    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then",
+    "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
 )
+common_path = required(".specify/scripts/bash/common.sh")
+common_text = pending.get(common_path, common_path.read_text(encoding="utf-8"))
+manifest_counts = {
+    form: common_text.count(form)
+    for form in (manifest_upstream, manifest_v091, manifest_hardened)
+}
+if manifest_counts[manifest_hardened] == 1 and sum(manifest_counts.values()) == 1:
+    pass
+elif manifest_counts[manifest_hardened] == 0 and sum(manifest_counts.values()) == 1:
+    legacy_manifest = next(
+        form for form, count in manifest_counts.items() if count == 1
+    )
+    replace(".specify/scripts/bash/common.sh", legacy_manifest, manifest_hardened)
+else:
+    raise SystemExit(
+        "speckit-bootstrap: upstream artifact changed; preset manifest fallback is unknown"
+    )
 
 replace(
     ".specify/scripts/bash/common.sh",
