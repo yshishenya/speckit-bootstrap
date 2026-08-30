@@ -759,7 +759,7 @@ from pathlib import Path
 
 skills = Path(sys.argv[1])
 guard_start = "After emitting the block above you MUST actually invoke the hook"
-guard_end = "without confirmation, STOP instead of executing them."
+guard_end = "STOP instead of executing publish, deploy, destructive, or other non-auto-commit state changes."
 for path in sorted(skills.glob("speckit-*/SKILL.md")):
     text = path.read_text(encoding="utf-8")
     if ".specify/extensions.yml" not in text or "EXECUTE_COMMAND" not in text:
