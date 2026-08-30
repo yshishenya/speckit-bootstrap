@@ -2197,21 +2197,63 @@ if "def _read_commit_style" not in auto_commit_text:
 auto_commit_text = pending.get(
     auto_commit_path, auto_commit_path.read_text(encoding="utf-8")
 )
-auto_commit_v091_cleanup = "            message_file.unlink()"
+auto_commit_v091_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            message_file.unlink()\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
 auto_commit_hardened_cleanup = (
-    "            # Caller owns and cleans up the transport file; never delete it here."
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
+auto_commit_final_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
 )
 auto_commit_cleanup_counts = {
     form: auto_commit_text.count(form)
-    for form in (auto_commit_v091_cleanup, auto_commit_hardened_cleanup)
+    for form in (
+        auto_commit_v091_cleanup,
+        auto_commit_hardened_cleanup,
+        auto_commit_final_cleanup,
+    )
 }
 if (
-    auto_commit_cleanup_counts[auto_commit_hardened_cleanup] == 1
+    (
+        auto_commit_cleanup_counts[auto_commit_hardened_cleanup] == 1
+        or auto_commit_cleanup_counts[auto_commit_final_cleanup] == 1
+    )
     and sum(auto_commit_cleanup_counts.values()) == 1
 ):
     pass
 elif (
-    auto_commit_cleanup_counts[auto_commit_hardened_cleanup] == 0
+    auto_commit_cleanup_counts[auto_commit_v091_cleanup] == 1
     and sum(auto_commit_cleanup_counts.values()) == 1
 ):
     replace(

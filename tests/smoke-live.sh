@@ -117,18 +117,41 @@ common = Path(sys.argv[1])
 auto_commit = Path(sys.argv[2])
 final_case = '/*|..|../*|*/..|*/../*) manifest_file="" ;;'
 v091_case = '/*|*../*|../*) manifest_file="" ;;'
-caller_cleanup = (
-    "            # Caller owns and cleans up the transport file; never delete it here."
+final_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    message_file: Path | None = None\n"
+    "    resolved_message_file: Path | None = None\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2]).absolute()\n"
+    "        resolved_message_file = message_file.resolve()\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            # Caller owns and cleans up the transport file; never delete it here.\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
 )
-v091_cleanup = "            message_file.unlink()"
+v091_cleanup = (
+    "    event_name = argv[0]\n"
+    "    generated_message = \"\"\n"
+    "    if len(argv) == 3:\n"
+    "        message_file = Path(argv[2])\n"
+    "        try:\n"
+    "            generated_message = message_file.read_text(encoding=\"utf-8\").strip()\n"
+    "            message_file.unlink()\n"
+    "        except (OSError, UnicodeDecodeError) as exc:\n"
+    "            print(f\"[specify] Error: cannot read message file: {exc}\", file=sys.stderr)\n"
+    "            return 1"
+)
 
 common_text = common.read_text(encoding="utf-8")
 auto_commit_text = auto_commit.read_text(encoding="utf-8")
 assert common_text.count(final_case) == 1
-assert auto_commit_text.count(caller_cleanup) == 1
+assert auto_commit_text.count(final_cleanup) == 1
 common.write_text(common_text.replace(final_case, v091_case, 1), encoding="utf-8")
 auto_commit.write_text(
-    auto_commit_text.replace(caller_cleanup, v091_cleanup, 1), encoding="utf-8"
+    auto_commit_text.replace(final_cleanup, v091_cleanup, 1), encoding="utf-8"
 )
 PY
 (
@@ -141,6 +164,39 @@ PY
 grep -Fq '/*|..|../*|*/..|*/../*) manifest_file="" ;;' \
   "$PROJECT/.specify/scripts/bash/common.sh"
 grep -Fq 'Caller owns and cleans up the transport file' \
+  "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
+
+cp "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" \
+  "$SANDBOX/auto_commit.py.backup"
+python3 - "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+known = (
+    '            generated_message = message_file.read_text(encoding="utf-8").strip()\n'
+    "            # Caller owns and cleans up the transport file; never delete it here."
+)
+drifted = known.replace(
+    "\n",
+    "\n            # unknown surrounding drift\n",
+    1,
+)
+assert text.count(known) == 1
+path.write_text(text.replace(known, drifted, 1), encoding="utf-8")
+PY
+if (
+  # shellcheck disable=SC1090,SC1091
+  source "$BOOTSTRAP"
+  # shellcheck disable=SC2034
+  PROJECT_DIR="$PROJECT"
+  ensure_governed_generated_artifacts
+) >/dev/null 2>&1; then
+  echo 'smoke-live: unknown Python auto-commit cleanup form was accepted' >&2
+  exit 1
+fi
+mv "$SANDBOX/auto_commit.py.backup" \
   "$PROJECT/.specify/extensions/git/scripts/python/auto_commit.py"
 
 cp "$PROJECT/.specify/scripts/bash/common.sh" "$SANDBOX/common.sh.backup"
