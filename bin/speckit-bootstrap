@@ -2395,19 +2395,6 @@ for relative in (
     ".agents/skills/speckit-git-initialize/SKILL.md",
     ".specify/extensions/git/commands/speckit.git.initialize.md",
 ):
-    initialize_path = required(relative)
-    initialize_text = pending.get(
-        initialize_path, initialize_path.read_text(encoding="utf-8")
-    )
-    if "STOP with a blocking installation error" in initialize_text:
-        continue
-    replace(
-        relative,
-        "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`",
-        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`",
-    )
     replace(
         relative,
         "- Runs `git init`, `git add .`, and `git commit` with an initial commit message",
@@ -2421,8 +2408,8 @@ for relative in (
     replace(
         relative,
         "If the extension scripts are not found, fall back to:\n"
-        "- **Bash**: `git init && git commit --allow-empty -m \"Initial commit from Specify template\"`\n"
-        "- **PowerShell**: `git init; git commit --allow-empty -m \"Initial commit from Specify template\"`",
+        "- **Bash**: `git init && git add . && git commit -m \"Initial commit from Specify template\"`\n"
+        "- **PowerShell**: `git init; git add .; git commit -m \"Initial commit from Specify template\"`",
         "If the extension scripts are not found, STOP with a blocking installation error. Do not run an inline "
         "fallback: the managed scripts own the Git availability and existing-repository guards.",
     )
