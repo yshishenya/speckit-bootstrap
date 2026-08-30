@@ -57,7 +57,7 @@ optional Ponytail setup.
 ### 1. Install or update
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.1/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.2/install.sh | bash
 ```
 
 The first-stage installer comes from the immutable release tag. It resolves the
@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.1/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.1 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.2/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.2 bash
 ```
 
 > [!TIP]
