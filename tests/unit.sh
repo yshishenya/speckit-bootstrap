@@ -992,6 +992,8 @@ run_test 'workflow refresh skips matching immutable source' test_workflow_refres
 run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
 run_test 'generated hardening is installed before lock capture' test_generated_hardening_contract_is_installed_before_lock_capture
 
+run_test 'GRAF overlays preserve generic projects and reject drift' python3 "$REPO_ROOT/tests/graf-overlays.py"
+
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
   exit 1
