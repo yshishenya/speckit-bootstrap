@@ -1573,8 +1573,7 @@ ensure_agent_context_config() {
   [[ -f "$config" ]] || return 0
 
   if grep -q '^context_file:' "$config"; then
-    sed -i.bak 's#^context_file:.*#context_file: "AGENTS.md"#' "$config"
-    rm -f "$config.bak"
+    return 0
   else
     local tmp
     tmp="$(mktemp)"
@@ -1593,13 +1592,14 @@ configure_git_auto_commit() {
     return 0
   fi
 
-  python3 - "$config" <<'PY'
+  python3 - "$config" "$(lock_file)" <<'PY'
 import re
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines()
+preserve_doc_opt_out = Path(sys.argv[2]).is_file()
 
 enabled_after_doc_hooks = {
     "after_constitution",
@@ -1635,7 +1635,7 @@ for line in lines:
                 continue
 
         if current_hook and re.match(r"^    enabled:\s*(true|false)\s*$", line):
-            enabled = "true" if current_hook in enabled_after_doc_hooks else "false"
+            enabled = "true" if current_hook in enabled_after_doc_hooks and not (preserve_doc_opt_out and line.strip() == "enabled: false") else "false"
             out.append(f"    enabled: {enabled}")
             continue
 
@@ -2253,26 +2253,17 @@ replace(
     "in `.specify/init-options.json` and `agent-context-defaults.json`; it reports nothing to do only when no mapped target exists.",
 )
 
-replace(
-    ".agents/skills/speckit-git-commit/SKILL.md",
-    "5. Determines the commit message based on `commit_style` (see below)\n"
-    "6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`",
-    "5. Determines the commit message based on `commit_style` (see below)\n"
-    "6. Inspects `git status` and STOPS when the worktree contains changes outside the paths owned by the triggering "
-    "Spec Kit command; auto-commit must never absorb unrelated or secret-bearing files\n"
-    "7. Treats enabled documentation-stage auto-commits as pre-approved: after checking that every changed path is "
-    "owned by the triggering command, runs without an additional confirmation; `after_implement` is never auto-committed "
-    "and remains a manual post-validation commit\n"
-    "8. Only then, if enabled and there are command-owned changes, runs the configured auto-commit script",
+replace_variants(
+    '.agents/skills/speckit-git-commit/SKILL.md',
+    '5. Determines the commit message based on `commit_style` (see below)\n6. If enabled and there are uncommitted changes, runs `git add .` + `git commit`',
+    '5. Determines the commit message based on `commit_style` (see below)\n6. Inspects `git status` and STOPS when the worktree contains changes outside the paths owned by the triggering Spec Kit command; auto-commit must never absorb unrelated or secret-bearing files\n7. Requires explicit user confirmation immediately before every state-changing commit; `after_implement` is never auto-committed and remains a manual post-validation commit\n8. Only then, if enabled and there are command-owned changes, runs the configured auto-commit script',
+    '5. Determines the commit message based on `commit_style` (see below)\n6. Inspects `git status` and STOPS when the worktree contains changes outside the paths owned by the triggering Spec Kit command; auto-commit must never absorb unrelated or secret-bearing files\n7. Treats enabled documentation-stage auto-commits as pre-approved: after checking that every changed path is owned by the triggering command, runs without an additional confirmation; `after_implement` is never auto-committed and remains a manual post-validation commit\n8. Only then, if enabled and there are command-owned changes, runs the configured auto-commit script',
 )
-replace(
-    ".agents/skills/speckit-git-commit/SKILL.md",
-    "Determine the event name from the hook that triggered this command, then run the script:",
-    "Determine the event name from the hook that triggered this command. Before invoking a script, inspect `git "
-    "status --short` and verify every changed path belongs to that command. Enabled documentation-stage "
-    "auto-commits are pre-approved and need no additional confirmation. If the event is `after_implement`, do not "
-    "invoke auto-commit; finish validation and use a manual user-approved implementation commit instead. Then run "
-    "the script:",
+replace_variants(
+    '.agents/skills/speckit-git-commit/SKILL.md',
+    'Determine the event name from the hook that triggered this command, then run the script:',
+    'Determine the event name from the hook that triggered this command. Before invoking a script, inspect `git status --short`, verify every changed path belongs to that command, and obtain explicit user confirmation for the commit. If the event is `after_implement`, do not invoke auto-commit; finish validation and use a manual user-approved implementation commit instead. Then run the script:',
+    'Determine the event name from the hook that triggered this command. Before invoking a script, inspect `git status --short` and verify every changed path belongs to that command. Enabled documentation-stage auto-commits are pre-approved and need no additional confirmation. If the event is `after_implement`, do not invoke auto-commit; finish validation and use a manual user-approved implementation commit instead. Then run the script:',
 )
 replace(
     ".agents/skills/speckit-git-commit/SKILL.md",
@@ -2342,15 +2333,17 @@ replace(
     "If `context_files` and `context_file` are empty, the command derives a default target from the active integration "
     "in `.specify/init-options.json` and `agent-context-defaults.json`; it reports nothing to do only when no mapped target exists.",
 )
-replace(
-    ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
-    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
-    "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
-    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
-    "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
-    "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
-    "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
-)
+# Preserve the audited GRAF artifact that already removed timestamp selection.
+if hashlib.sha256(required('.specify/extensions/agent-context/commands/speckit.agent-context.update.md').read_bytes()).hexdigest() != '5364e3ca857da49ec461768a811485b841f1b860ae8e6fb9701257e072fa2e5e':
+    replace(
+        ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
+        "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
+        "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
+        "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
+        "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
+        "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
+        "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
+    )
 
 auto_commit_path = required(".specify/extensions/git/scripts/python/auto_commit.py")
 auto_commit_text = pending.get(
@@ -2794,28 +2787,30 @@ replace(
     "    $allocator = Join-Path $repoRoot 'scripts/claim-feature.py'\n    if ((Test-Path $allocator) -and $env:GRAF_SKIP_FEATURE_CLAIM -ne '1') {\n        $suggestion = & python $allocator --root $repoRoot --json\n        if ($LASTEXITCODE -ne 0) { throw 'Feature ID suggestion failed; branch creation stopped.' }\n        return [int](($suggestion | ConvertFrom-Json).next_available)\n    }\n    return $maxNum + 1\n}",
 )
 
-replace(
-    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
-    "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
-    "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
-    "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
-    "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
-    "                    $PlanPath = $fullPath.Substring($normRoot.Length)\n"
-    "                } else {\n"
-    "                    $PlanPath = $fullPath\n"
-    "                }",
-    "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
-    "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
-    "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
-    "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
-    "                    $relativeCandidate = $fullPath.Substring($normRoot.Length)\n"
-    "                    $resolvedCandidate = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relativeCandidate\n"
-    "                    if (Test-IsSubPath -Root $ProjectRoot -Path $resolvedCandidate) {\n"
-    "                        $resolvedPath = $resolvedCandidate.Replace('\\', '/')\n"
-    "                        $PlanPath = $resolvedPath.Substring($normRoot.Length)\n"
-    "                    }\n"
-    "                }",
-)
+# Preserve the audited GRAF artifact that already removed timestamp selection.
+if hashlib.sha256(required('.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1').read_bytes()).hexdigest() != 'bcf83246a2df7565e0cb1bb81fe41dd5a477963d3752836503f5d98e70466445':
+    replace(
+        ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
+        "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
+        "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
+        "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
+        "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
+        "                    $PlanPath = $fullPath.Substring($normRoot.Length)\n"
+        "                } else {\n"
+        "                    $PlanPath = $fullPath\n"
+        "                }",
+        "                $fullPath = $candidate.FullName.Replace('\\', '/')\n"
+        "                $normRoot = $ProjectRoot.Replace('\\', '/').TrimEnd('/') + '/'\n"
+        "                $cmp = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }\n"
+        "                if ($fullPath.StartsWith($normRoot, $cmp)) {\n"
+        "                    $relativeCandidate = $fullPath.Substring($normRoot.Length)\n"
+        "                    $resolvedCandidate = Resolve-ContextPath -Root $ProjectRoot -RelativePath $relativeCandidate\n"
+        "                    if (Test-IsSubPath -Root $ProjectRoot -Path $resolvedCandidate) {\n"
+        "                        $resolvedPath = $resolvedCandidate.Replace('\\', '/')\n"
+        "                        $PlanPath = $resolvedPath.Substring($normRoot.Length)\n"
+        "                    }\n"
+        "                }",
+    )
 replace(
     ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",
     "    $rootFull = [System.IO.Path]::GetFullPath($Root)\n"

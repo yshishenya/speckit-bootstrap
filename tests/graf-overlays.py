@@ -6,9 +6,9 @@ import tempfile
 source = (Path(__file__).resolve().parents[1] / 'bin/speckit-bootstrap').read_text()
 helper = source.split('ensure_governed_generated_artifacts() {', 1)[1].split("<<'PY' || return 1\n", 1)[1].split('\nPY\n', 1)[0]
 start = helper.index('# Closeout is a separate, evidence-gated lifecycle stage.')
-end = helper.index('replace(\n    ".specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1",', start)
+end = helper.index('# Preserve the audited GRAF artifact', start)
 block = helper[start:end]
-setup = helper[:helper.index('def replace_chain(')]
+setup = helper[:helper.index('invalid_yaml_skip =')]
 replacements = [tuple(ast.literal_eval(arg) for arg in node.args[:3])
                 for node in ast.walk(ast.parse(block))
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
@@ -50,4 +50,50 @@ with tempfile.TemporaryDirectory() as directory:
         assert 'upstream artifact changed' in str(error)
     else:
         raise AssertionError('unknown upstream state must fail closed')
-print('GRAF overlays: PASS (six replacements, generic workflow, idempotence, drift)')
+    migrations = [node for node in ast.walk(ast.parse(helper))
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                  and node.func.id == 'replace_variants'
+                  and ast.literal_eval(node.args[0]) == '.agents/skills/speckit-git-commit/SKILL.md']
+    assert len(migrations) == 2
+    for node in migrations:
+        relative, *states = [ast.literal_eval(arg) for arg in node.args]
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        for initial in states:
+            path.write_text(initial)
+            scope['pending'] = {}
+            scope['replace_variants'](relative, *states)
+            assert scope['pending'].get(path, path.read_text()) == states[-1]
+        for unknown in ('unknown commit policy', states[1] + '\n' + states[-1]):
+            path.write_text(unknown)
+            scope['pending'] = {}
+            try:
+                scope['replace_variants'](relative, *states)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError('unknown or mixed commit policy must fail closed')
+    preserved = [node for node in ast.parse(helper).body
+                 if isinstance(node, ast.If)
+                 and 'hashlib.sha256(required(' in ast.get_source_segment(helper, node.test)]
+    assert len(preserved) == 2
+    for node in preserved:
+        call = node.body[0].value
+        relative, old, new = [ast.literal_eval(arg) for arg in call.args]
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        migration = compile(ast.Module(body=[node], type_ignores=[]), '<preserve GRAF>', 'exec')
+        for initial in (old, new):
+            path.write_text(initial)
+            scope['pending'] = {}
+            exec(migration, scope)
+            assert scope['pending'].get(path, path.read_text()) == new
+        path.write_text('unknown modified artifact')
+        scope['pending'] = {}
+        try:
+            exec(migration, scope)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError('unrecognized fingerprint must not bypass the guard')
+print('GRAF overlays: PASS (replacements, generic workflow, idempotence, drift, commit-policy migrations)')
