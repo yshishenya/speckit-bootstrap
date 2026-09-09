@@ -992,6 +992,30 @@ run_test 'workflow refresh skips matching immutable source' test_workflow_refres
 run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
 run_test 'generated hardening is installed before lock capture' test_generated_hardening_contract_is_installed_before_lock_capture
 
+test_refresh_preserves_project_choices() (
+  PROJECT_DIR="$TEST_ROOT/project-choices"
+  mkdir -p "$PROJECT_DIR/.specify/extensions/agent-context" "$PROJECT_DIR/.specify/extensions/git"
+  local context="$PROJECT_DIR/.specify/extensions/agent-context/agent-context-config.yml"
+  local config="$PROJECT_DIR/.specify/extensions/git/git-config.yml"
+  printf 'context_file: ".dev/active-feature-context.md"\n' > "$context"
+  ensure_agent_context_config
+  grep -Fq 'context_file: ".dev/active-feature-context.md"' "$context" || return 1
+  printf 'auto_commit:\n  default: true\n  after_specify:\n    enabled: false\n  after_implement:\n    enabled: true\n' > "$config"
+  touch "$PROJECT_DIR/.specify/speckit-bootstrap.lock.json"
+  configure_git_auto_commit
+  python3 - "$config" <<'PYTEST'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+assert 'default: false' in text
+assert 'after_specify:\n    enabled: false' in text
+assert 'after_implement:\n    enabled: false' in text
+PYTEST
+)
+run_test 'refresh preserves project context and documentation opt-out' test_refresh_preserves_project_choices
+
+run_test 'GRAF overlays preserve generic projects and reject drift' python3 "$REPO_ROOT/tests/graf-overlays.py"
+
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
   exit 1
