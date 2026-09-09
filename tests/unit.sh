@@ -908,6 +908,8 @@ call = "  ensure_governed_generated_artifacts\n"
 capture = "    capture_project_dependency_state\n"
 assert text.count(call) == 1
 assert text.index(call) < text.index(capture)
+main = text.split('main() {', 1)[1]
+assert main.index('  prepare_codex_skill_refresh || return 1\n') < main.index('  install_cli\n')
 assert 'if [[ "$FROZEN" -eq 0 ]]; then\n    ensure_governed_generated_artifacts' in text
 for marker in (
     "MUST NOT skip clarify",
@@ -961,7 +963,6 @@ for marker in (
 PY
 }
 
-printf '1..29\n'
 run_test 'version and sourceability' test_version_and_sourceability
 run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
@@ -1015,8 +1016,24 @@ PYTEST
 run_test 'refresh preserves project context and documentation opt-out' test_refresh_preserves_project_choices
 
 run_test 'GRAF overlays preserve generic projects and reject drift' python3 "$REPO_ROOT/tests/graf-overlays.py"
+run_test 'locked overlays refresh without forcing shared files' python3 "$REPO_ROOT/tests/refresh-manifest.py"
+
+test_latest_tag_excludes_prereleases() (
+  # shellcheck disable=SC2329
+  git() {
+    printf '%s\n' \
+      'aaaa refs/tags/v1.0.1' \
+      'bbbb refs/tags/v1.0.5' \
+      'bbbb refs/tags/v1.0.5^{}' \
+      'cccc refs/tags/v2.0.0-rc.1' \
+      'dddd refs/tags/v3.0.0-beta.1'
+  }
+  [[ "$(resolve_latest_tag https://example.invalid/spec-kit.git)" == v1.0.5 ]]
+)
+run_test 'latest tag excludes prereleases and peeled refs' test_latest_tag_excludes_prereleases
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
   exit 1
 fi
+printf '1..%s\n' "$TESTS_RUN"
