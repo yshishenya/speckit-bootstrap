@@ -961,7 +961,111 @@ for marker in (
 PY
 }
 
-printf '1..29\n'
+test_refresh_preserves_project_preferences() (
+  PROJECT_DIR="$TEST_ROOT/project-preferences"
+  local context="$PROJECT_DIR/.specify/extensions/agent-context/agent-context-config.yml"
+  local git_config="$PROJECT_DIR/.specify/extensions/git/git-config.yml"
+  mkdir -p "$(dirname "$context")" "$(dirname "$git_config")"
+  printf '%s\n' 'context_file: ".dev/active-feature-context.md"' 'context_files: []' > "$context"
+  printf '%s\n' \
+    'auto_commit:' '  default: true' \
+    '  after_plan:' '    enabled: false # intentional opt-out' \
+    '    message: "Keep my message"' \
+    '  after_tasks:' '    enabled: true # explicit opt-in' \
+    '  after_implement:' '    enabled: true # unsafe automatic code commit' \
+    '  before_plan:' '    enabled: true' > "$git_config"
+
+  ensure_agent_context_config
+  configure_git_auto_commit >/dev/null
+  grep -Fq 'context_file: ".dev/active-feature-context.md"' "$context" || return 1
+  grep -Fq 'enabled: false # intentional opt-out' "$git_config" || return 1
+  grep -Fq 'enabled: true # explicit opt-in' "$git_config" || return 1
+  grep -Fq 'enabled: false # unsafe automatic code commit' "$git_config" || return 1
+  grep -Fq '  default: false' "$git_config" || return 1
+  grep -Fq 'message: "Keep my message"' "$git_config" || return 1
+  [[ "$(grep -c 'enabled: true' "$git_config")" == 1 ]] || return 1
+
+  cp "$context" "$context.expected"
+  cp "$git_config" "$git_config.expected"
+  ensure_agent_context_config
+  configure_git_auto_commit >/dev/null
+  cmp "$context" "$context.expected" || return 1
+  cmp "$git_config" "$git_config.expected" || return 1
+
+  # A plural target is not a request to inject a second, root target.
+  printf '%s\n' 'context_files:' '  - path: "docs/context.md"' > "$context"
+  cp "$context" "$context.expected"
+  ensure_agent_context_config
+  cmp "$context" "$context.expected" || return 1
+  printf '%s\n' '# No configured target yet' > "$context"
+  ensure_agent_context_config
+  grep -Fq 'context_file: "AGENTS.md"' "$context"
+)
+
+test_compact_guidance_is_idempotent_and_preserves_user_text() (
+  PROJECT_DIR="$TEST_ROOT/compact-guidance"
+  SKIP_PONYTAIL=0
+  mkdir -p "$PROJECT_DIR"
+  printf '%s\n' '# User-owned instructions' 'Do not replace this policy.' > "$PROJECT_DIR/AGENTS.md"
+  ensure_github_agent_instructions >/dev/null
+  ensure_ponytail_agent_instructions >/dev/null
+  cp "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/expected.md"
+  ensure_github_agent_instructions >/dev/null
+  ensure_ponytail_agent_instructions >/dev/null
+  cmp "$PROJECT_DIR/AGENTS.md" "$PROJECT_DIR/expected.md" || return 1
+  grep -Fq 'Do not replace this policy.' "$PROJECT_DIR/AGENTS.md" || return 1
+  [[ "$(grep -c 'SPECKIT GITHUB ISSUE START' "$PROJECT_DIR/AGENTS.md")" == 1 ]] || return 1
+  [[ "$(grep -c 'SPECKIT PONYTAIL START' "$PROJECT_DIR/AGENTS.md")" == 1 ]]
+)
+
+test_refresh_attests_only_locked_generated_skills() (
+  PROJECT_DIR="$TEST_ROOT/locked-overlay"
+  local skill="$PROJECT_DIR/.agents/skills/speckit-plan/SKILL.md"
+  local manifest="$PROJECT_DIR/.specify/integrations/codex.manifest.json"
+  local expected_digest
+  mkdir -p "$(dirname "$skill")" "$(dirname "$manifest")"
+  printf '%s\n' 'Known generated overlay' > "$skill"
+  capture_project_skills_state
+  expected_digest="$(sha256_for_test "$skill")"
+  python3 - "$PROJECT_DIR" "$RESOLVED_PROJECT_SKILLS_MANIFEST" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+(root / '.specify/speckit-bootstrap.lock.json').write_text(json.dumps({
+    'schema_version': 3, 'spec_kit': {'ref': 'a' * 40},
+    'project_skills': json.loads(sys.argv[2]),
+}), encoding='utf-8')
+(root / '.specify/integrations/codex.manifest.json').write_text(json.dumps({
+    'integration': 'codex', 'files': {
+        '.agents/skills/speckit-plan/SKILL.md': 'old-upstream-hash',
+        'user-file.md': 'preserve-this-hash',
+    },
+}), encoding='utf-8')
+PY
+  # shellcheck disable=SC2317,SC2329
+  specify() {
+    if [[ "$1 $2" == 'integration status' ]]; then
+      printf '%s\n' 'Integration: codex'
+      return 0
+    fi
+    [[ "$*" == 'integration upgrade codex --integration-options=--skills' ]] || return 1
+    # The real CLI also rejects a skill whose manifest hash differs.
+    grep -Fq "$(sha256_for_test "$skill")" "$manifest"
+  }
+  ensure_codex_integration >/dev/null || return 1
+  grep -Fq "$expected_digest" "$manifest" || return 1
+  grep -Fq 'preserve-this-hash' "$manifest" || return 1
+  cp "$manifest" "$manifest.expected"
+  printf '%s\n' 'User change outside the generated baseline' >> "$skill"
+  if ensure_codex_integration >/dev/null 2>&1; then
+    return 1
+  fi
+  cmp "$manifest" "$manifest.expected"
+)
+
+printf '1..32\n'
 run_test 'version and sourceability' test_version_and_sourceability
 run_test 'installer reports a missing PATH entry' test_installer_reports_missing_path
 run_test 'issue canon catalog entry requires SHA-256' test_issue_canon_catalog_entry_requires_checksum
@@ -991,6 +1095,9 @@ run_test 'workflow install uses immutable source noninteractively' test_workflow
 run_test 'workflow refresh skips matching immutable source' test_workflow_refresh_skips_matching_immutable_source
 run_test 'cache cleanup removes completed workflow lock' test_cache_cleanup_removes_completed_workflow_lock
 run_test 'generated hardening is installed before lock capture' test_generated_hardening_contract_is_installed_before_lock_capture
+run_test 'refresh preserves project preferences and commit safety' test_refresh_preserves_project_preferences
+run_test 'compact guidance is idempotent and preserves user text' test_compact_guidance_is_idempotent_and_preserves_user_text
+run_test 'refresh attests only locked generated skills without force' test_refresh_attests_only_locked_generated_skills
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2

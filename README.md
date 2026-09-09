@@ -266,11 +266,12 @@ This project is deliberately more than a package installer. It installs a
 reviewable development policy intended to keep agents, repository artifacts,
 and external tracking aligned:
 
-- Git auto-commit runs without an additional confirmation after completed
-  documentation stages and change-scope validation confirms that only
-  command-owned paths changed:
-  `constitution`, `specify`, `clarify`, `plan`, `checklist`, `tasks`, and
-  `analyze`.
+- Git auto-commit preferences for documentation stages are preserved, including
+  explicit opt-outs. Bootstrap never turns them on during refresh. When enabled
+  in `.specify/extensions/git/git-config.yml`, `after_constitution`,
+  `after_specify`, `after_clarify`, `after_plan`, `after_checklist`, `after_tasks`
+  and `after_analyze` may commit command-owned documentation after scope
+  validation, subject to project approval rules.
 - Every `before_*` hook, `after_implement`, and `after_taskstoissues` stays
   disabled. Implementation code and external tracker changes remain explicit.
 - `tasks.md` is the implementation source of truth. GitHub Issues are the
@@ -279,6 +280,17 @@ and external tracking aligned:
   `[<feature>][<priority>][<area>] T###: <Russian outcome>`.
 - Generated plan and task templates require an explicit risk and validation
   lane before implementation.
+- Implementation uses small, testable behaviors: a focused failing test, the
+  corresponding change, then affected checks. Tidy first only when it helps
+  that change; existing acceptance and release gates remain mandatory.
+- Resume from current spec/plan/tasks and validation evidence instead of
+  regenerating completed stages. Recheck changed inputs, including uncommitted
+  changes; a matching SHA alone is not sufficient.
+- Context targets in
+  `.specify/extensions/agent-context/agent-context-config.yml` are preserved
+  (`context_file` and `context_files`). A custom target can keep feature-specific
+  pointers out of the always-loaded root `AGENTS.md`; project safety rules still
+  belong in the instruction chain. Empty targets use the extension's defaults.
 - Product applications and deployed services use CalVer; reusable tools and
   libraries use SemVer.
 - Ponytail shapes implementation behavior but doesn't weaken the selected

@@ -1572,10 +1572,9 @@ ensure_agent_context_config() {
   local config="$PROJECT_DIR/.specify/extensions/agent-context/agent-context-config.yml"
   [[ -f "$config" ]] || return 0
 
-  if grep -q '^context_file:' "$config"; then
-    sed -i.bak 's#^context_file:.*#context_file: "AGENTS.md"#' "$config"
-    rm -f "$config.bak"
-  else
+  # Both singular and plural targets belong to the project, including empty
+  # values that delegate target selection to the extension's integration map.
+  if ! grep -Eq '^(context_file|context_files):' "$config"; then
     local tmp
     tmp="$(mktemp)"
     printf 'context_file: "AGENTS.md"\n' > "$tmp"
@@ -1601,7 +1600,7 @@ from pathlib import Path
 path = Path(sys.argv[1])
 lines = path.read_text(encoding="utf-8").splitlines()
 
-enabled_after_doc_hooks = {
+allowed_after_doc_hooks = {
     "after_constitution",
     "after_specify",
     "after_clarify",
@@ -1634,9 +1633,13 @@ for line in lines:
                 out.append("  default: false")
                 continue
 
-        if current_hook and re.match(r"^    enabled:\s*(true|false)\s*$", line):
-            enabled = "true" if current_hook in enabled_after_doc_hooks else "false"
-            out.append(f"    enabled: {enabled}")
+        if current_hook and current_hook not in allowed_after_doc_hooks:
+            line = re.sub(
+                r"^(    enabled:\s*)(?:true|false)(\s*(?:#.*)?)$",
+                r"\g<1>false\2",
+                line,
+            )
+            out.append(line)
             continue
 
     out.append(line)
@@ -1669,17 +1672,10 @@ end = "<!-- SPECKIT GITHUB ISSUE END -->"
 block = f"""{start}
 ## Правила GitHub issues
 
-- `tasks.md` остается источником правды по реализации.
-- GitHub issues используются как внешний трекер выполнения, review, PR-связей и evidence.
-- Canon: `docs/agent-guidance/github-issue-canon.md`.
-- Все GitHub issue titles, issue bodies, PR descriptions, status comments, closure comments и sync notes по умолчанию пиши на русском.
-- Пиши простым, понятным языком, чтобы текст был ясен не только инженерам, но и обычным участникам проекта.
-- Для Spec Kit task-backed issues используй ровно один title format: `[<feature>][<priority>][<area>] T###: <русский результат>`.
-- Не используй bare `T###: ...` titles в bootstrapped repositories с `github-issue-canon`; это fallback только для репозиториев без project canon.
-- Не создавай дубли GitHub issues. Сначала ищи существующие issue по номеру фичи, task ID, ссылке и заголовку.
-- В PR используй `Fixes #...`, `Closes #...` или `Resolves #...` только для issues, которые PR закрывает полностью; для частичной связи используй `Refs #...` или `Part of #...`.
-- Когда задача отмечена `[X]` в `tasks.md`, закрывай соответствующий GitHub issue только после проверки evidence и добавляй подробный понятный closure comment: что закрыто, почему важно, как проверено, что не входит, какой PR и task закрыты.
-- Если GitHub issue закрыт, но `tasks.md` еще открыт, сначала проверь реализацию и evidence, а не отмечай задачу выполненной молча.
+- `tasks.md` — источник истины реализации; GitHub issues — внешний трекер. Для работы с трекером читай `docs/agent-guidance/github-issue-canon.md`.
+- Заголовки, описания issues/PR и все комментарии пиши простым русским языком. Формат task-backed issue: `[<feature>][<priority>][<area>] T###: <русский результат>`, не bare `T###: ...`.
+- До создания ищи дубли по feature, task ID, ссылке и заголовку. В PR: `Fixes`/`Closes`/`Resolves` только для полного закрытия; `Refs`/`Part of` — для частичной связи.
+- `[X]` сам по себе не разрешает закрытие: проверь доказательства и добавь комментарий с результатом, пользой, проверками, границами, PR и tasks. Закрытый issue при открытом task сначала сверь с реализацией, не исправляй отметку молча.
 {end}
 """
 if start in text and end in text:
@@ -2131,6 +2127,33 @@ replace(
     ".agents/skills/speckit-implement/SKILL.md",
     "9. Completion validation:",
     "11. Completion validation:",
+)
+replace(
+    ".agents/skills/speckit-implement/SKILL.md",
+    "   - **Phase-by-phase execution**: Complete each phase before moving to the next\n"
+    "   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together\n"
+    "   - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks\n"
+    "   - **File-based coordination**: Tasks affecting the same files must run sequentially\n"
+    "   - **Validation checkpoints**: Verify each phase completion before proceeding\n\n"
+    "9. Implementation execution rules:\n"
+    "   - **Setup first**: Initialize project structure, dependencies, configuration\n"
+    "   - **Tests before code**: If you need to write tests for contracts, entities, and integration scenarios\n"
+    "   - **Core development**: Implement models, services, CLI commands, endpoints\n"
+    "   - **Integration work**: Database connections, middleware, logging, external services\n"
+    "   - **Polish and validation**: Unit tests, performance optimization, documentation",
+    "   - Respect task dependencies, foundation gates and phase checkpoints. Serialize shared-file changes.\n"
+    "   - Deliver one independently testable behavior at a time. Run its test before the corresponding code, "
+    "then implement and run affected checks; do not write the whole feature's tests before its first behavior.\n\n"
+    "9. Implementation execution rules:\n"
+    "   - Tidy first only when a small behavior-preserving change makes the next task easier. Keep structural "
+    "and behavioral diffs separable; check affected behavior before and after. Unrelated cleanup is out of scope.\n"
+    "   - Use the selected lane's focused checks inside the loop, including affected unchanged tests. Keep "
+    "required integration, security, acceptance and release gates at their defined boundaries.\n"
+    "   - Reuse current spec/plan/tasks and already-read context within the session; reread changed inputs and "
+    "their dependents. Do not regenerate completed stages just to resume. Required skill instructions and "
+    "project-wide safety constraints still apply.\n"
+    "   - Record the next task, blockers, check commands/results and their input revision in the existing "
+    "tasks.md or handoff. A commit SHA alone does not qualify dirty-worktree evidence.",
 )
 replace(
     ".agents/skills/speckit-converge/SKILL.md",
@@ -3567,18 +3590,14 @@ upstream_path = sys.argv[2]
 text = path.read_text(encoding="utf-8", errors="ignore")
 start = "<!-- SPECKIT PONYTAIL START -->"
 end = "<!-- SPECKIT PONYTAIL END -->"
-upstream_line = f"- Upstream Ponytail `AGENTS.md` fallback обновляется в `{upstream_path}`; не копируй его в корневой `AGENTS.md` вручную.\n"
-fallback_line = "- Если plugin hooks недоступны, используй upstream fallback-файл как справку по Ponytail, но приоритет корневого `AGENTS.md` и Spec Kit managed-блоков выше.\n"
 block = f"""{start}
 ## Ponytail в Spec Kit
 
-- Ponytail управляет формой реализации: меньше кода, меньше новых зависимостей, reuse/stdlib/native-first, минимальный рабочий diff.
-- Ponytail не снижает выбранный risk/validation lane: low-risk lanes остаются scoped, а significant/high-risk lanes сохраняют specs, plan, checklists, tasks, analyze, taskstoissues, GitHub issues, PR evidence, release notes и closeout.
-- Реальное поведение Ponytail приходит из установленного Codex plugin; этот блок описывает только границы применения внутри Spec Kit.
-{upstream_line}{fallback_line}- На этапе реализации применяй Ponytail ladder после чтения реального потока: не строить лишнее, искать существующий helper/pattern, использовать stdlib/native, писать минимум кода, но сохранять security, accessibility, trust-boundary validation и проверки.
-- Для сложного diff перед PR/merge запускай `@ponytail-review` и убирай найденное переусложнение, если это не ломает требования и evidence.
-- Если оставляешь намеренное упрощение, помечай его `ponytail:` comment с потолком решения и trigger/upgrade path; периодически собирай такие места через `@ponytail-debt`.
-- Если пользователь просит `@ponytail off`, `normal mode` или явно настаивает на полной версии, выполняй это без спора.
+- Применяй установленный plugin после чтения реального потока: существующее решение → stdlib/native → минимальный код и зависимости.
+- Не ослабляй выбранный risk/validation lane, Spec Kit gates, security, accessibility, проверки входных данных и доказательства приёмки. Low-risk остаётся scoped; обязательные планирование, трекер и выпускные проверки сохраняются.
+- Если hooks недоступны, читай `{upstream_path}`; это справка ниже приоритетом, чем корневой `AGENTS.md` и Spec Kit. Не копируй её сюда.
+- Сложный diff перед PR/merge проверяй через `@ponytail-review`. Намеренные упрощения отмечай `ponytail:` с пределом и условием доработки; для их периодического учёта есть `@ponytail-debt`.
+- `@ponytail off`, `normal mode` и явное требование полной версии выполняй без спора.
 {end}
 """
 if start in text and end in text:
@@ -3707,13 +3726,40 @@ ensure_codex_integration() {
     return
   fi
 
+  # Upstream's manifest predates our overlays. A settings-only refresh may need
+  # regeneration, but must not require --force (which also replaces shared
+  # infrastructure). Only attest skills whose entire trees still match our lock.
+  if [[ "$FROZEN" -eq 0 ]] && locked_project_skills_match; then
+    python3 - "$PROJECT_DIR" <<'PY' || return 1
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+path = root / ".specify/integrations/codex.manifest.json"
+if path.is_symlink():
+    raise SystemExit("speckit-bootstrap: integration manifest must not be a symlink")
+data = json.loads(path.read_text(encoding="utf-8"))
+lock = json.loads((root / ".specify/speckit-bootstrap.lock.json").read_text(encoding="utf-8"))
+if data.get("integration") != "codex" or not isinstance(data.get("files"), dict):
+    raise SystemExit("speckit-bootstrap: unsupported Codex integration manifest")
+for name in lock["project_skills"]:
+    relative = f".agents/skills/{name}/SKILL.md"
+    if relative not in data["files"]:
+        continue
+    skill = root / relative
+    if skill.is_symlink():
+        raise SystemExit("speckit-bootstrap: refusing to attest a symlinked skill")
+    data["files"][relative] = hashlib.sha256(skill.read_bytes()).hexdigest()
+path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+PY
+  fi
   specify integration upgrade codex --integration-options="--skills"
 }
 
 locked_generated_state_matches() {
   local lock
-  local current_skills
-  local saved_skills="$RESOLVED_PROJECT_SKILLS_MANIFEST"
   lock="$(lock_file)"
   [[ -f "$lock" ]] || return 1
   [[ "$(read_lock_value "$lock" schema_version 2>/dev/null || true)" == "3" ]] || return 1
@@ -3723,6 +3769,15 @@ locked_generated_state_matches() {
   [[ "$(read_lock_value "$lock" extensions.git.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash git)" ]] || return 1
   [[ "$(read_lock_value "$lock" github_issue_canon.tree_sha256 2>/dev/null || true)" == "$(extension_tree_hash github-issue-canon)" ]] || return 1
   [[ "$(read_lock_value "$lock" workflow.sha256 2>/dev/null || true)" == "$(sha256_path "$PROJECT_DIR/.specify/workflows/speckit/workflow.yml")" ]] || return 1
+  locked_project_skills_match
+}
+
+locked_project_skills_match() {
+  local lock current_skills
+  local saved_skills="$RESOLVED_PROJECT_SKILLS_MANIFEST"
+  lock="$(lock_file)"
+  [[ -f "$lock" ]] || return 1
+  [[ "$(read_lock_value "$lock" schema_version 2>/dev/null || true)" == "3" ]] || return 1
   if ! capture_project_skills_state; then
     RESOLVED_PROJECT_SKILLS_MANIFEST="$saved_skills"
     return 1
