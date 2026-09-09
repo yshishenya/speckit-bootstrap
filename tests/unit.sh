@@ -1019,7 +1019,8 @@ run_test 'GRAF overlays preserve generic projects and reject drift' python3 "$RE
 run_test 'locked overlays refresh without forcing shared files' python3 "$REPO_ROOT/tests/refresh-manifest.py"
 
 test_latest_tag_excludes_prereleases() (
-  # shellcheck disable=SC2329
+  # Called indirectly by resolve_latest_tag; older ShellCheck reports SC2317.
+  # shellcheck disable=SC2329,SC2317
   git() {
     printf '%s\n' \
       'aaaa refs/tags/v1.0.1' \
