@@ -131,7 +131,7 @@ project-local skill digest. A healthy installation reports
 
 ## What you get
 
-- **Official Spec Kit, pinned.** The latest official `v*` tag is resolved to
+- **Official Spec Kit, pinned.** The latest stable `vMAJOR.MINOR.PATCH` tag is resolved to
   its immutable commit SHA before installation.
 - **Fast repeat refreshes.** An installed CLI with the exact requested version
   and source commit is reused without a forced reinstall.
@@ -218,6 +218,14 @@ speckit-bootstrap .
 # Verify the result without writing.
 speckit-bootstrap . --doctor
 ```
+
+Refreshes of schema-v3 projects first verify every managed skill against the
+bootstrap lock. Only verified bootstrap overlays are reconciled with Codex's
+installation hashes, so an upstream upgrade does not need `--force` and does
+not overwrite customized shared scripts or templates. Local skill edits stop
+the refresh before the CLI, workflow or extensions are changed. `--frozen`
+does not perform this reconciliation. Prerelease tags are excluded from the
+default `latest` selection; an explicit version/ref remains available.
 
 Then use the normal Spec Kit skills in Codex:
 
@@ -327,7 +335,7 @@ speckit-bootstrap . --skip-ponytail
 
 | Variable | Purpose |
 | --- | --- |
-| `SPEC_KIT_VERSION` | Spec Kit tag or ref; defaults to the latest `v*` tag |
+| `SPEC_KIT_VERSION` | Spec Kit tag or ref; defaults to the latest stable `vMAJOR.MINOR.PATCH` tag |
 | `SPECKIT_EXTENSION_CATALOG_URL` | Override the approved extension catalog |
 | `SPECKIT_GITHUB_ISSUE_CANON_VERSION` | Pin the issue-canon release tag |
 | `SPECKIT_GITHUB_ISSUE_CANON_URL` | Use an explicitly reviewed custom ZIP |

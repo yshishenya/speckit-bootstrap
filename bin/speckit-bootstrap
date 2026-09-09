@@ -244,7 +244,7 @@ resolve_latest_tag() {
   local repository_url="$1"
 
   git ls-remote --tags --sort='v:refname' "$repository_url" 'refs/tags/v*' |
-    sed -n 's#.*refs/tags/\(v[^^]*\)$#\1#p' |
+    sed -nE 's#.*refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' |
     tail -1
 }
 
@@ -1899,6 +1899,15 @@ def replace_variants(relative: str, *states: str) -> None:
     pending[path] = text.replace(old, final, 1)
 
 
+def replace_graf_workflow(relative: str, old: str, new: str) -> None:
+    # Spec Kit 1.0.5 removed the unused scope input and bumped this workflow.
+    latest = old.replace('  version: "1.0.0"\n', '  version: "1.0.1"\n', 1).replace(
+        '  scope:\n    type: string\n    default: "full"\n'
+        '    enum: ["full", "backend-only", "frontend-only"]\n', '', 1,
+    )
+    replace_variants(relative, old, latest, new)
+
+
 def replace_regex(relative: str, pattern: str, replacement: str) -> None:
     path = required(relative)
     text = pending.get(path, path.read_text(encoding="utf-8"))
@@ -2318,15 +2327,17 @@ for relative in (
         "`jdoe/web/008-guided-tour`. Numbering is per-project only when each project also uses a distinct specs "
         "directory; a shared `specs/` directory still contributes its highest global number.",
     )
-replace(
-    ".agents/skills/speckit-agent-context-update/SKILL.md",
-    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
-    "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
-    "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
-    "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
-    "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
-    "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
-)
+# The integration renderer preserves this audited GRAF command body in its skill.
+if hashlib.sha256(required('.agents/skills/speckit-agent-context-update/SKILL.md').read_bytes()).hexdigest() != '8ce56c5cb0881d1502064edd117b204050565d5f3120012e0c31c6d67e157997':
+    replace(
+        ".agents/skills/speckit-agent-context-update/SKILL.md",
+        "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
+        "When `plan_path` is omitted, the script auto-detects the most recently modified `specs/**/plan.md` (searched recursively, so nested scoped layouts are discovered).",
+        "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n"
+        "- **Python**: `.specify/extensions/agent-context/scripts/python/update_agent_context.py [plan_path]`\n\n"
+        "When `plan_path` is omitted, the script first uses `feature_directory/plan.md` from `.specify/feature.json`; "
+        "if unavailable, it falls back to the most recently modified `specs/**/plan.md` recursively.",
+    )
 replace(
     ".specify/extensions/agent-context/commands/speckit.agent-context.update.md",
     "If `context_files` and `context_file` are empty, the command reports nothing to do and exits successfully.",
@@ -2766,7 +2777,7 @@ replace(
 replace('.agents/skills/speckit-taskstoissues/SKILL.md', '## Outline\n', "## Closeout mode\n\nWhen arguments explicitly contain `closeout` and the repository provides\n`scripts/validate-issue-closeout.py`, reconcile existing issues instead of running\nthe creation Outline below. Read the project's tracker policy and current feature\nspec/plan/tasks. This mode creates no new issues and does not declare the feature\ncomplete while mandatory acceptance remains open.\n\n1. Re-read live issue bodies/comments/state and establish ownership from exact\n   task links plus canonical title/body fields. A checked task is a candidate,\n   not proof of every issue acceptance criterion. Do not infer ownership from\n   only a feature/task number or ordinary references.\n2. Verify the actual merged implementation, every original acceptance criterion,\n   required review/runtime/release evidence and the exact tested SHA. If merge,\n   release or manual acceptance is still pending, keep the issue open and report\n   the concrete missing requirement. Never turn missing evidence into cancellation.\n3. For a fully satisfied issue, prepare the detailed Russian closure comment\n   required by tracker policy, including PR number, explicit PR SHA,\n   `governance-fast: PASS` run URL and, when required, Candidate SHA and\n   `release-full: PASS` URL. First validate a temporary issue JSON containing that\n   proposed comment with `scripts/validate-issue-closeout.py --issue-json <path>\n   --tasks <tasks.md> --expected-sha <SHA> --repo <owner/repo> --verify-live`;\n   add `--require-release-full` for release-gated acceptance. A nonzero result\n   blocks closing. The command verifies metadata and live PR/runs; human/runtime\n   acceptance must also be evidenced, never inferred from a green run.\n4. Within the user's authorized tracker scope, re-read state/comments before\n   writing, add the approved-by-evidence comment only if absent, export the actual\n   issue again and repeat validation, then close as completed and verify state.\n   If GitHub already auto-closed it, validate its evidence and add the missing\n   comment; reopen when mandatory evidence/tasks are incomplete. For explicitly\n   superseded work use NOT_PLANNED with the actual replacement, not fabricated\n   completed tasks. Do not duplicate comments on retry; stop on rate limits and\n   preserve a resumable list of remaining issue numbers.\n5. Close the umbrella last, only after live feature-mode validation with\n   `--repo --feature --umbrella --tasks --expected-sha --allow-open-umbrella`\n   (and the release flag when required). Verify again without\n   `--allow-open-umbrella`. If unresolved criteria remain, the result is\n   `tracker pending`, even when implementation itself is complete.\n6. Run the Post-Execution Checks below and report exact closed/already-closed/\n   remaining issue numbers with reasons. Do not continue into the creation Outline.\n\n## Outline\n")
 replace('.agents/skills/speckit-implement/SKILL.md', 'Report final status with summary of completed work.', 'Report implementation and tracker status separately. Local tests or checked tasks\nare not merged/released acceptance. Read the repository tracker policy and list\nwhich issues are fully closable, which require merge/release/manual evidence, and\nwhy. For fully satisfied acceptance use explicit closing keywords in the PR;\n`Refs` is only a relationship and never closes an issue. When merge and required\nacceptance are already verified, run `$speckit-taskstoissues closeout` in projects\nthat provide the closeout validator. Otherwise report `implementation ready;\ntracker pending` with the remaining gates. Do not report overall completion merely\nbecause every local task checkbox is checked.')
 if (root / "scripts/validate-issue-closeout.py").is_file():
-    replace('.specify/workflows/speckit/workflow.yml', 'schema_version: "1.0"\nworkflow:\n  id: "speckit"\n  name: "Full SDD Cycle"\n  version: "1.0.0"\n  author: "GitHub"\n  description: "Runs specify → plan → tasks → implement with review gates"\n\nrequires:\n  # 0.8.5 is the first release with engine-side resolution of the\n  # ``integration: "auto"`` default. Older versions would treat "auto"\n  # as a literal integration key and fail at dispatch.\n  speckit_version: ">=0.8.5"\n  integrations:\n    # The four commands below (specify, plan, tasks, implement) are core\n    # spec-kit commands provided by every integration. The list here is an\n    # advisory, non-exhaustive compatibility hint following the documented\n    # ``any: [...]`` schema -- it is NOT a closed set. The workflow runs\n    # against any integration the project was initialized with, including\n    # ones not listed below, as long as that integration provides the four\n    # core commands referenced in ``steps``.\n    any:\n      - "alquimia"\n      - "claude"\n      - "copilot"\n      - "gemini"\n      - "opencode"\n\ninputs:\n  spec:\n    type: string\n    required: true\n    prompt: "Describe what you want to build"\n  integration:\n    type: string\n    default: "auto"\n    prompt: "Integration to use (e.g. claude, copilot, gemini; \'auto\' uses the project\'s initialized integration)"\n  scope:\n    type: string\n    default: "full"\n    enum: ["full", "backend-only", "frontend-only"]\n\nsteps:\n  - id: specify\n    command: speckit.specify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: review-spec\n    type: gate\n    message: "Review the generated spec before planning."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: plan\n    command: speckit.plan\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: review-plan\n    type: gate\n    message: "Review the plan before generating tasks."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tasks\n    command: speckit.tasks\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: implement\n    command: speckit.implement\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n', 'schema_version: "1.0"\nworkflow:\n  id: "speckit"\n  name: "GRAF: разработка и завершение трекера"\n  version: "1.0.1"\n  author: "GRAF"\n  description: "Полный проектный цикл с обязательной приёмкой и сверкой issues"\n\nrequires:\n  speckit_version: ">=1.0.1"\n  integrations:\n    any:\n      - "alquimia"\n      - "claude"\n      - "copilot"\n      - "gemini"\n      - "opencode"\n\ninputs:\n  spec:\n    type: string\n    required: true\n    prompt: "Describe what you want to build"\n  integration:\n    type: string\n    default: "auto"\n    prompt: "Integration to use (e.g. claude, copilot, gemini; \'auto\' uses the project\'s initialized integration)"\n  scope:\n    type: string\n    default: "full"\n    enum: ["full", "backend-only", "frontend-only"]\n\nsteps:\n  - id: specify\n    command: speckit.specify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: clarify\n    command: speckit.clarify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Уточнить требования и обязательные проверки для {{ inputs.spec }}."\n\n  - id: review-spec\n    type: gate\n    message: "Требования и существенные решения согласованы; неоднозначности устранены."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: plan\n    command: speckit.plan\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: checklist\n    command: speckit.checklist\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Проверить требования по рискам текущего проекта и запланированного объёма."\n\n  - id: review-plan\n    type: gate\n    message: "План и необходимые reviewer-owned checklists проверены; автор реализации не подменяет приёмку."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tasks\n    command: speckit.tasks\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: analyze\n    command: speckit.analyze\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Устранить блокирующие расхождения через нужный этап; к реализации переходить только после чистой повторной проверки."\n\n  - id: review-analysis\n    type: gate\n    message: "Проверка analyze не оставила блокирующих расхождений; версии spec/plan/tasks согласованы."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: taskstoissues\n    command: speckit.taskstoissues\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Связать текущие задачи с существующими issues без дубликатов."\n\n  - id: implement\n    command: speckit.implement\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: converge\n    command: speckit.converge\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "При остатке выполнить цикл taskstoissues → implement → converge. Не считать локальную реализацию закрытием issues."\n\n  - id: validation-release\n    type: gate\n    message: >-\n      Перед продолжением подтвердить review, нужные проверки, разрешённое слияние\n      и обязательную приёмку/выпуск на точном SHA по правилам проекта.\n      Одни локальные тесты не достаточны. Если условия не выполнены, остановиться\n      с конкретным остатком; approval этого gate не заменяет отсутствующие доказательства.\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tracker-closeout\n    command: speckit.taskstoissues\n    integration: "{{ inputs.integration }}"\n    input:\n      args: >-\n        closeout: перечитать tasks.md и live issues, подтвердить все исходные\n        критерии и merged PR/CI/runtime/release evidence. Через штатный\n        validate-issue-closeout.py --verify-live закрыть только подтверждённые\n        задачи с подробным русским комментарием; umbrella последним через live\n        feature validation. Соблюдать разрешённый пользователем объём действий.\n        Неполные задачи оставить открытыми с причиной. Выдать точный остаток,\n        не завершать создание issues повторно и не считать [X] достаточным доказательством.\n\n  - id: review-closeout\n    type: gate\n    message: >-\n      Подтверждена финальная сверка трекера: закрытые issues проверены,\n      все обязательные критерии выполнены. Если обязательные задачи ещё открыты,\n      результат tracker pending, а workflow не завершён.\n    options: [approve, reject]\n    on_reject: abort\n')
+    replace_graf_workflow('.specify/workflows/speckit/workflow.yml', 'schema_version: "1.0"\nworkflow:\n  id: "speckit"\n  name: "Full SDD Cycle"\n  version: "1.0.0"\n  author: "GitHub"\n  description: "Runs specify → plan → tasks → implement with review gates"\n\nrequires:\n  # 0.8.5 is the first release with engine-side resolution of the\n  # ``integration: "auto"`` default. Older versions would treat "auto"\n  # as a literal integration key and fail at dispatch.\n  speckit_version: ">=0.8.5"\n  integrations:\n    # The four commands below (specify, plan, tasks, implement) are core\n    # spec-kit commands provided by every integration. The list here is an\n    # advisory, non-exhaustive compatibility hint following the documented\n    # ``any: [...]`` schema -- it is NOT a closed set. The workflow runs\n    # against any integration the project was initialized with, including\n    # ones not listed below, as long as that integration provides the four\n    # core commands referenced in ``steps``.\n    any:\n      - "alquimia"\n      - "claude"\n      - "copilot"\n      - "gemini"\n      - "opencode"\n\ninputs:\n  spec:\n    type: string\n    required: true\n    prompt: "Describe what you want to build"\n  integration:\n    type: string\n    default: "auto"\n    prompt: "Integration to use (e.g. claude, copilot, gemini; \'auto\' uses the project\'s initialized integration)"\n  scope:\n    type: string\n    default: "full"\n    enum: ["full", "backend-only", "frontend-only"]\n\nsteps:\n  - id: specify\n    command: speckit.specify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: review-spec\n    type: gate\n    message: "Review the generated spec before planning."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: plan\n    command: speckit.plan\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: review-plan\n    type: gate\n    message: "Review the plan before generating tasks."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tasks\n    command: speckit.tasks\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: implement\n    command: speckit.implement\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n', 'schema_version: "1.0"\nworkflow:\n  id: "speckit"\n  name: "GRAF: разработка и завершение трекера"\n  version: "1.0.1"\n  author: "GRAF"\n  description: "Полный проектный цикл с обязательной приёмкой и сверкой issues"\n\nrequires:\n  speckit_version: ">=1.0.1"\n  integrations:\n    any:\n      - "alquimia"\n      - "claude"\n      - "copilot"\n      - "gemini"\n      - "opencode"\n\ninputs:\n  spec:\n    type: string\n    required: true\n    prompt: "Describe what you want to build"\n  integration:\n    type: string\n    default: "auto"\n    prompt: "Integration to use (e.g. claude, copilot, gemini; \'auto\' uses the project\'s initialized integration)"\n  scope:\n    type: string\n    default: "full"\n    enum: ["full", "backend-only", "frontend-only"]\n\nsteps:\n  - id: specify\n    command: speckit.specify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: clarify\n    command: speckit.clarify\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Уточнить требования и обязательные проверки для {{ inputs.spec }}."\n\n  - id: review-spec\n    type: gate\n    message: "Требования и существенные решения согласованы; неоднозначности устранены."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: plan\n    command: speckit.plan\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: checklist\n    command: speckit.checklist\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Проверить требования по рискам текущего проекта и запланированного объёма."\n\n  - id: review-plan\n    type: gate\n    message: "План и необходимые reviewer-owned checklists проверены; автор реализации не подменяет приёмку."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tasks\n    command: speckit.tasks\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: analyze\n    command: speckit.analyze\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Устранить блокирующие расхождения через нужный этап; к реализации переходить только после чистой повторной проверки."\n\n  - id: review-analysis\n    type: gate\n    message: "Проверка analyze не оставила блокирующих расхождений; версии spec/plan/tasks согласованы."\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: taskstoissues\n    command: speckit.taskstoissues\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "Связать текущие задачи с существующими issues без дубликатов."\n\n  - id: implement\n    command: speckit.implement\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "{{ inputs.spec }}"\n\n  - id: converge\n    command: speckit.converge\n    integration: "{{ inputs.integration }}"\n    input:\n      args: "При остатке выполнить цикл taskstoissues → implement → converge. Не считать локальную реализацию закрытием issues."\n\n  - id: validation-release\n    type: gate\n    message: >-\n      Перед продолжением подтвердить review, нужные проверки, разрешённое слияние\n      и обязательную приёмку/выпуск на точном SHA по правилам проекта.\n      Одни локальные тесты не достаточны. Если условия не выполнены, остановиться\n      с конкретным остатком; approval этого gate не заменяет отсутствующие доказательства.\n    options: [approve, reject]\n    on_reject: abort\n\n  - id: tracker-closeout\n    command: speckit.taskstoissues\n    integration: "{{ inputs.integration }}"\n    input:\n      args: >-\n        closeout: перечитать tasks.md и live issues, подтвердить все исходные\n        критерии и merged PR/CI/runtime/release evidence. Через штатный\n        validate-issue-closeout.py --verify-live закрыть только подтверждённые\n        задачи с подробным русским комментарием; umbrella последним через live\n        feature validation. Соблюдать разрешённый пользователем объём действий.\n        Неполные задачи оставить открытыми с причиной. Выдать точный остаток,\n        не завершать создание issues повторно и не считать [X] достаточным доказательством.\n\n  - id: review-closeout\n    type: gate\n    message: >-\n      Подтверждена финальная сверка трекера: закрытые issues проверены,\n      все обязательные критерии выполнены. Если обязательные задачи ещё открыты,\n      результат tracker pending, а workflow не завершён.\n    options: [approve, reject]\n    on_reject: abort\n')
 
 # Use the consumer allocator for both suggestion and reservation.
 replace(
@@ -3706,6 +3717,63 @@ explain_hidden_install_metadata_drift() {
   echo "speckit-bootstrap: audit with: SPECKIT_TRACK_INSTALL_METADATA=1 speckit-bootstrap . --doctor" >&2
 }
 
+prepare_codex_skill_refresh() {
+  # A locked bootstrap overlay is installed content, not an unreviewed user edit.
+  # Reconcile only its hashes; --force would also overwrite project infrastructure.
+  [[ "$FROZEN" -eq 0 ]] || return 0
+  local lock RESOLVED_PROJECT_SKILLS_MANIFEST
+  lock="$(lock_file)"
+  [[ -f "$lock" ]] || return 0
+  [[ "$(read_lock_value "$lock" schema_version)" == "3" ]] || return 0
+  RESOLVED_PROJECT_SKILLS_MANIFEST="$(read_lock_json "$lock" project_skills)"
+  verify_project_skills || return 1
+  python3 - "$PROJECT_DIR" "$RESOLVED_PROJECT_SKILLS_MANIFEST" <<'PY'
+import hashlib
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+
+root = Path(sys.argv[1])
+locked = json.loads(sys.argv[2])
+path = root / '.specify/integrations/codex.manifest.json'
+for parent in (path, *path.parents):
+    if parent == root:
+        break
+    if parent.is_symlink():
+        raise SystemExit('speckit-bootstrap: unsafe Codex manifest path')
+if not path.exists():
+    raise SystemExit(0)
+data = json.loads(path.read_text(encoding='utf-8'))
+if not isinstance(data, dict) or data.get('integration') != 'codex' or not isinstance(data.get('files'), dict) or not data['files']:
+    raise SystemExit('speckit-bootstrap: invalid Codex manifest')
+files = {}
+for name in data['files']:
+    parts = name.split('/')
+    if len(parts) < 4 or parts[:2] != ['.agents', 'skills'] or parts[2] not in locked or any(p in ('', '.', '..') or '\\' in p for p in parts):
+        raise SystemExit('speckit-bootstrap: Codex manifest contains an unowned path')
+    target = root.joinpath(*parts)
+    for parent in (target, *target.parents):
+        if parent == root:
+            break
+        if parent.is_symlink():
+            raise SystemExit('speckit-bootstrap: unsafe managed skill path')
+    files[name] = hashlib.sha256(target.read_bytes()).hexdigest()
+if files != data['files']:
+    data['files'] = files
+    with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent, delete=False) as output:
+        temporary = Path(output.name)
+        try:
+            json.dump(data, output, ensure_ascii=False, indent=2)
+            output.write('\n')
+            output.close()
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+PY
+}
+
 ensure_codex_integration() {
   local status_output
   status_output="$(specify integration status 2>&1 || true)"
@@ -4265,6 +4333,8 @@ main() {
     return 0
   fi
 
+  # Fail on local skill edits before changing the CLI, workflows or extensions.
+  prepare_codex_skill_refresh || return 1
   install_cli
   require_cmd specify
   ensure_user_extension_catalog

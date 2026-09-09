@@ -12,7 +12,7 @@ setup = helper[:helper.index('invalid_yaml_skip =')]
 replacements = [tuple(ast.literal_eval(arg) for arg in node.args[:3])
                 for node in ast.walk(ast.parse(block))
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
-                and node.func.id == 'replace']
+                and node.func.id in ('replace', 'replace_graf_workflow')]
 assert len(replacements) == 6
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
@@ -42,6 +42,16 @@ with tempfile.TemporaryDirectory() as directory:
     scope['pending'] = {}
     exec(compile(block, '<GRAF overlays>', 'exec'), scope)
     assert not scope['pending'], 'second application must make no changes'
+    workflow_old = next(old for relative, old, _new in replacements if relative.endswith('workflow.yml'))
+    workflow.write_text(workflow_old.replace('  version: "1.0.0"\n', '  version: "1.0.1"\n', 1).replace(
+        '  scope:\n    type: string\n    default: "full"\n'
+        '    enum: ["full", "backend-only", "frontend-only"]\n', '', 1,
+    ))
+    exec(compile(block, '<GRAF overlays 1.0.5>', 'exec'), scope)
+    assert 'speckit.converge' in scope['pending'][workflow]
+    assert 'id: tracker-closeout' in scope['pending'][workflow]
+    workflow.write_text(scope['pending'][workflow])
+    scope['pending'] = {}
     path = root / replacements[0][0]
     path.write_text('unknown upstream state')
     try:
@@ -53,6 +63,7 @@ with tempfile.TemporaryDirectory() as directory:
     migrations = [node for node in ast.walk(ast.parse(helper))
                   if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                   and node.func.id == 'replace_variants'
+                  and isinstance(node.args[0], ast.Constant)
                   and ast.literal_eval(node.args[0]) == '.agents/skills/speckit-git-commit/SKILL.md']
     assert len(migrations) == 2
     for node in migrations:
@@ -76,13 +87,19 @@ with tempfile.TemporaryDirectory() as directory:
     preserved = [node for node in ast.parse(helper).body
                  if isinstance(node, ast.If)
                  and 'hashlib.sha256(required(' in ast.get_source_segment(helper, node.test)]
-    assert len(preserved) == 2
+    assert len(preserved) == 3
     for node in preserved:
         call = node.body[0].value
         relative, old, new = [ast.literal_eval(arg) for arg in call.args]
         path = root / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         migration = compile(ast.Module(body=[node], type_ignores=[]), '<preserve GRAF>', 'exec')
+        if relative == '.agents/skills/speckit-agent-context-update/SKILL.md':
+            audited = (Path(__file__).parent / 'fixtures/graf-agent-context-update.md').read_text()
+            path.write_text(audited)
+            scope['pending'] = {}
+            exec(migration, scope)
+            assert not scope['pending'], 'audited pointer-only skill must remain byte-identical'
         for initial in (old, new):
             path.write_text(initial)
             scope['pending'] = {}

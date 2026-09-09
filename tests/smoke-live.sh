@@ -46,7 +46,7 @@ DEFAULT_PLAN="$SANDBOX/default-plan.json"
 env SPECKIT_PONYTAIL= "$BOOTSTRAP" "$PROJECT" --dry-run --json >"$DEFAULT_PLAN"
 LATEST_PONYTAIL="$(git ls-remote --tags --sort='v:refname' \
   https://github.com/DietrichGebert/ponytail.git 'refs/tags/v*' |
-  sed -n 's#.*refs/tags/\(v[^{}]*\)$#\1#p' | tail -1)"
+  sed -nE 's#.*refs/tags/(v[0-9]+\.[0-9]+\.[0-9]+)$#\1#p' | tail -1)"
 python3 - "$DEFAULT_PLAN" "$LATEST_PONYTAIL" <<'PY'
 import json
 import sys
