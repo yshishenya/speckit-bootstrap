@@ -949,6 +949,41 @@ fi
 mv "$PROJECT_SKILL_BACKUP" "$PROJECT_SKILL"
 "$BOOTSTRAP" "$PROJECT" --doctor
 
+# Exercise project preferences through a real extension refresh, not only the
+# configuration helpers. The lock must capture the customized state first.
+CONTEXT_CONFIG="$PROJECT/.specify/extensions/agent-context/agent-context-config.yml"
+GIT_CONFIG="$PROJECT/.specify/extensions/git/git-config.yml"
+SPECIFY_PYTHON="$(uv tool dir)/specify-cli/bin/python3"
+"$SPECIFY_PYTHON" - "$CONTEXT_CONFIG" "$GIT_CONFIG" <<'PY'
+import sys
+from pathlib import Path
+import yaml
+
+context, git = map(Path, sys.argv[1:])
+config = yaml.safe_load(context.read_text(encoding="utf-8"))
+config["context_file"] = "docs/active-feature-context.md"
+config["context_files"] = []
+context.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+config = yaml.safe_load(git.read_text(encoding="utf-8"))
+config["auto_commit"]["after_plan"]["enabled"] = False
+config["auto_commit"]["after_tasks"]["enabled"] = True
+git.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+PY
+"$BOOTSTRAP" "$PROJECT"
+cp "$CONTEXT_CONFIG" "$SANDBOX/context-config.expected"
+cp "$GIT_CONFIG" "$SANDBOX/git-config.expected"
+"$SPECIFY_PYTHON" - "$CONTEXT_CONFIG" "$GIT_CONFIG" <<'PY'
+import sys
+from pathlib import Path
+import yaml
+
+context, git = [yaml.safe_load(Path(p).read_text(encoding="utf-8")) for p in sys.argv[1:]]
+assert context["context_file"] == "docs/active-feature-context.md"
+assert git["auto_commit"]["after_plan"]["enabled"] is False
+assert git["auto_commit"]["after_tasks"]["enabled"] is True
+assert git["auto_commit"]["after_implement"]["enabled"] is False
+PY
+
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
@@ -968,6 +1003,8 @@ done
 
 LOCK_BEFORE="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
 "$BOOTSTRAP" "$PROJECT" --skip-cli-update --frozen
+cmp "$CONTEXT_CONFIG" "$SANDBOX/context-config.expected"
+cmp "$GIT_CONFIG" "$SANDBOX/git-config.expected"
 LOCK_AFTER="$(sha256sum "$LOCK" 2>/dev/null | awk '{print $1}' || shasum -a 256 "$LOCK" | awk '{print $1}')"
 if [[ "$LOCK_BEFORE" != "$LOCK_AFTER" ]]; then
   echo 'smoke-live: frozen bootstrap rewrote the reproducibility lock' >&2
