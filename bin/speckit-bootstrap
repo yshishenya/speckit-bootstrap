@@ -1924,7 +1924,10 @@ def replace_regex(relative: str, pattern: str, replacement: str) -> None:
 
 
 invalid_yaml_skip = re.compile(
-    r"If the YAML cannot be parsed or is invalid, skip hook checking silently and continue(?: normally| to [^\n.]+)\.?"
+    r"If the YAML cannot be parsed or is invalid, (?:skip hook checking silently and|"
+    r"do not skip silently: tell the user that `\.specify/extensions\.yml` could not be read "
+    r"\(include the parser error\) and that no hooks were checked, including any mandatory "
+    r"\(`optional: false`\) hooks registered there, then) continue(?: normally| to [^\n.]+)\.?"
 )
 invalid_yaml_guard = (
     "If the YAML cannot be parsed or is invalid, STOP with a blocking configuration error; "
@@ -1972,7 +1975,10 @@ for path in skills:
     updated = updated.replace(mandatory_hook, mandatory_hook_guard)
     updated = updated.replace(protected_guard, mandatory_hook_guard)
     updated = updated.replace(condition_policy, condition_guard)
-    if invalid_yaml_skip.search(updated) or invalid_yaml_guard not in updated:
+    if (
+        invalid_yaml_skip.search(updated) or invalid_yaml_guard not in updated
+        or updated.count(invalid_yaml_guard) != updated.count("If the YAML cannot be parsed or is invalid,")
+    ):
         raise SystemExit(
             f"speckit-bootstrap: upstream hook YAML guard changed in {path.relative_to(root)}"
         )
@@ -2328,7 +2334,11 @@ for relative in (
         "directory; a shared `specs/` directory still contributes its highest global number.",
     )
 # The integration renderer preserves this audited GRAF command body in its skill.
-if hashlib.sha256(required('.agents/skills/speckit-agent-context-update/SKILL.md').read_bytes()).hexdigest() != '8ce56c5cb0881d1502064edd117b204050565d5f3120012e0c31c6d67e157997':
+if hashlib.sha256(required('.agents/skills/speckit-agent-context-update/SKILL.md').read_bytes()).hexdigest() not in (
+    '8ce56c5cb0881d1502064edd117b204050565d5f3120012e0c31c6d67e157997',
+    # Spec Kit 1.0.6 preserves the extension author; the command body is identical.
+    'a3e8851794f8360aca98f38d7d93ffe0987dedcd4ed709fd2519b1c8d7e4301e',
+):
     replace(
         ".agents/skills/speckit-agent-context-update/SKILL.md",
         "- **PowerShell**: `.specify/extensions/agent-context/scripts/powershell/update-agent-context.ps1 [plan_path]`\n\n"
