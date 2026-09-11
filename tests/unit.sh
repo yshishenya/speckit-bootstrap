@@ -913,6 +913,11 @@ assert main.index('  prepare_codex_skill_refresh || return 1\n') < main.index(' 
 assert 'if [[ "$FROZEN" -eq 0 ]]; then\n    ensure_governed_generated_artifacts' in text
 for marker in (
     "MUST NOT skip clarify",
+    'Repository allocator takes precedence',
+    'do not independently scan `specs/`',
+    'exact reserved `<FEATURE_NUM>-`',
+    'Preserve every field in the existing pointer',
+    'speckit-git-feature followed by speckit-specify',
     "existing spec is updated in place",
     "project canon",
     "STOP with a blocking configuration error",

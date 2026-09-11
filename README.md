@@ -435,3 +435,16 @@ what manual work disappeared, and where the workflow still got in your way.
 ## License
 
 Released under the [MIT License](LICENSE).
+
+### Номер фичи в проектах с распределителем
+
+Если проект содержит `scripts/claim-feature.py`, ветка и спецификация используют
+один зарезервированный номер. Каталог спецификации не пересчитывает номер по
+папкам, а `.specify/feature.json` сохраняет все поля резервирования.
+Политика `.specify/feature-numbering.json` проверяется до вывода dry-run и
+создания ветки, включая явный номер и временную метку;
+`GRAF_SKIP_FEATURE_CLAIM` не отменяет политику проекта. Распределитель должен
+поддерживать read-only команду `--check-feature-id <number> --branch <branch>`.
+Старый `create-new-feature.sh` в таких проектах направляет к
+`speckit-git-feature` → `speckit-specify` до записи. Проекты без распределителя
+и политики сохраняют общий алгоритм Spec Kit.
