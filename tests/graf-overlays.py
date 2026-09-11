@@ -100,6 +100,9 @@ with tempfile.TemporaryDirectory() as directory:
             scope['pending'] = {}
             exec(migration, scope)
             assert not scope['pending'], 'audited pointer-only skill must remain byte-identical'
+            path.write_text(audited.replace('  author: github-spec-kit\n', '  author: spec-kit-core\n', 1))
+            exec(migration, scope)
+            assert not scope['pending'], '1.0.6 author metadata must remain byte-identical'
         for initial in (old, new):
             path.write_text(initial)
             scope['pending'] = {}
@@ -113,4 +116,31 @@ with tempfile.TemporaryDirectory() as directory:
             pass
         else:
             raise AssertionError('unrecognized fingerprint must not bypass the guard')
-print('GRAF overlays: PASS (replacements, generic workflow, idempotence, drift, commit-policy migrations)')
+    hook_block = helper[helper.index('invalid_yaml_skip ='):helper.index('\nreplace_regex(', helper.index('invalid_yaml_skip ='))]
+    exec(compile(hook_block[:hook_block.index('skills =')], '<hook constants>', 'exec'), scope)
+    warning = ('If the YAML cannot be parsed or is invalid, do not skip silently: tell the user that '
+               '`.specify/extensions.yml` could not be read (include the parser error) and that no hooks '
+               'were checked, including any mandatory (`optional: false`) hooks registered there, then continue')
+    for message in (
+        'If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally',
+        warning + ' normally', warning + ' to the Completion Report.',
+    ):
+        path = root / '.agents/skills/speckit-plan/SKILL.md'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('.specify/extensions.yml\nEXECUTE_COMMAND\n' + message + '\n' + scope['mandatory_hook'] + '\n' + scope['condition_policy'])
+        scope['pending'] = {}
+        exec(compile(hook_block, '<hook guards>', 'exec'), scope)
+        final = scope['pending'][path]
+        assert scope['invalid_yaml_guard'] in final and 'then continue' not in final
+        path.write_text(final)
+        scope['pending'] = {}
+        exec(compile(hook_block, '<repeat hook guards>', 'exec'), scope)
+        assert not scope['pending']
+        path.write_text(final + '\nIf the YAML cannot be parsed or is invalid, use an unknown fallback')
+        try:
+            exec(compile(hook_block, '<mixed hook guards>', 'exec'), scope)
+        except SystemExit as error:
+            assert 'upstream hook YAML guard changed' in str(error)
+        else:
+            raise AssertionError('mixed unknown YAML handling must fail closed')
+print('GRAF overlays: PASS (workflow, idempotence, drift, commit policy, 1.0.6 author and hook guards)')

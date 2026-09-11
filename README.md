@@ -227,6 +227,9 @@ the refresh before the CLI, workflow or extensions are changed. `--frozen`
 does not perform this reconciliation. Prerelease tags are excluded from the
 default `latest` selection; an explicit version/ref remains available.
 
+Spec Kit 1.0.6 is supported without weakening hook checks: unreadable hook YAML
+remains a blocking error, and the upstream extension-author metadata is preserved.
+
 Then use the normal Spec Kit skills in Codex:
 
 ```text
