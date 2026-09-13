@@ -6,14 +6,14 @@ import tempfile
 source = (Path(__file__).resolve().parents[1] / 'bin/speckit-bootstrap').read_text()
 helper = source.split('ensure_governed_generated_artifacts() {', 1)[1].split("<<'PY' || return 1\n", 1)[1].split('\nPY\n', 1)[0]
 start = helper.index('# Closeout is a separate, evidence-gated lifecycle stage.')
-end = helper.index('# Preserve the audited GRAF artifact', start)
+end = helper.index('# Preserve the repository-allocated identity', start)
 block = helper[start:end]
 setup = helper[:helper.index('invalid_yaml_skip =')]
 replacements = [tuple(ast.literal_eval(arg) for arg in node.args[:3])
                 for node in ast.walk(ast.parse(block))
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                 and node.func.id in ('replace', 'replace_graf_workflow')]
-assert len(replacements) == 6
+assert len(replacements) == 3
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     for relative, old, _new in replacements:
@@ -144,3 +144,67 @@ with tempfile.TemporaryDirectory() as directory:
         else:
             raise AssertionError('mixed unknown YAML handling must fail closed')
 print('GRAF overlays: PASS (workflow, idempotence, drift, commit policy, 1.0.6 author and hook guards)')
+
+# Numbering has its own fixtures: several migrations share the same file/header.
+numbering_start = helper.index('# Preserve the repository-allocated identity')
+numbering = helper[numbering_start:helper.index('# Preserve the audited GRAF artifact', numbering_start)]
+nodes = ast.parse(numbering).body
+calls = []
+for node in nodes:
+    if isinstance(node, ast.Expr):
+        calls.append(node.value)
+    elif isinstance(node, ast.If):
+        # Suggestions have old-installed and generic forms; start from upstream.
+        calls.append((node.orelse or node.body)[0].value)
+assert len(calls) == 14
+with tempfile.TemporaryDirectory() as directory:
+    root = Path(directory)
+    initial = {}
+    for call in calls:
+        relative, old = [ast.literal_eval(arg) for arg in call.args[:2]]
+        initial.setdefault(relative, []).append(old)
+    for relative, fragments in initial.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # The longer reservation block already includes the dry-run guard header.
+        fragments = [part for part in fragments if not any(part != other and part in other for other in fragments)]
+        path.write_text('\n'.join(fragments))
+    scope = {}
+    previous = sys.argv
+    sys.argv = ['graf-overlays.py', str(root)]
+    try:
+        exec(compile(setup, '<bootstrap helper>', 'exec'), scope)
+    finally:
+        sys.argv = previous
+    exec(compile(numbering, '<numbering>', 'exec'), scope)
+    for path, content in scope['pending'].items():
+        path.write_text(content)
+    scope['pending'] = {}
+    exec(compile(numbering, '<repeat numbering>', 'exec'), scope)
+    assert not scope['pending'], 'numbering transformations must be idempotent'
+    skill = (root / '.agents/skills/speckit-specify/SKILL.md').read_text()
+    assert 'same reserved numeric identity' in skill and 'Preserve every field' in skill
+    for relative in initial:
+        if '/extensions/git/scripts/' in relative:
+            text = (root / relative).read_text()
+            assert '--check-feature-id' in text and '--allocate' in text
+            assert 'feature-numbering.json' in text
+    # Every previously generated reservation state migrates, then stays stable.
+    for node in nodes:
+        if isinstance(node, ast.Expr) and node.value.func.id == 'replace_chain':
+            relative, *states = [ast.literal_eval(arg) for arg in node.value.args]
+            path = root / relative
+            for old in states:
+                path.write_text(old)
+                scope['pending'] = {}
+                scope['replace_chain'](relative, *states)
+                assert scope['pending'].get(path, path.read_text()) == states[-1]
+            path.write_text('unknown reservation implementation')
+            scope['pending'] = {}
+            try:
+                scope['replace_chain'](relative, *states)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError('unknown reservation implementation was accepted')
+print('Numbering overlays: PASS (shared ID, policy guard, reservations, migrations, idempotence)')
