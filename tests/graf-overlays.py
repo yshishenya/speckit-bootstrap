@@ -50,8 +50,18 @@ with tempfile.TemporaryDirectory() as directory:
     exec(compile(block, '<GRAF overlays 1.0.5>', 'exec'), scope)
     assert 'speckit.converge' in scope['pending'][workflow]
     assert 'id: tracker-closeout' in scope['pending'][workflow]
-    workflow.write_text(scope['pending'][workflow])
+    final = scope['pending'][workflow]
+    assert final.index('id: converge') < final.index('id: review-convergence') < final.index('id: validation-release')
+    gate = final[final.index('  - id: review-convergence\n'):final.index('  - id: validation-release\n')]
+    assert 'on_reject: abort' in gate and 'taskstoissues → implement' in gate
+    workflow.write_text(final.replace(gate, '', 1))
     scope['pending'] = {}
+    exec(compile(block, '<previous GRAF workflow>', 'exec'), scope)
+    assert scope['pending'][workflow] == final
+    workflow.write_text(final)
+    scope['pending'] = {}
+    exec(compile(block, '<repeat GRAF workflow>', 'exec'), scope)
+    assert not scope['pending']
     path = root / replacements[0][0]
     path.write_text('unknown upstream state')
     try:
