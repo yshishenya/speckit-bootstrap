@@ -78,8 +78,8 @@ speckit-bootstrap --version
 Re-run the installer at any time to update. To install a specific release:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.9/install.sh |
-  SPECKIT_BOOTSTRAP_VERSION=v0.9.9 bash
+curl -fsSL https://raw.githubusercontent.com/yshishenya/speckit-bootstrap/v0.9.10/install.sh |
+  SPECKIT_BOOTSTRAP_VERSION=v0.9.10 bash
 ```
 
 > [!TIP]
@@ -448,3 +448,6 @@ Released under the [MIT License](LICENSE).
 Старый `create-new-feature.sh` в таких проектах направляет к
 `speckit-git-feature` → `speckit-specify` до записи. Проекты без распределителя
 и политики сохраняют общий алгоритм Spec Kit.
+
+В workflow GRAF после `converge` сохраняется обязательная проверка отсутствия
+открытых задач текущего этапа перед приёмкой и завершением трекера.
