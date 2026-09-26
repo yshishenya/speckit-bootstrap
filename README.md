@@ -135,6 +135,9 @@ project-local skill digest. A healthy installation reports
   its immutable commit SHA before installation.
 - **Fast repeat refreshes.** An installed CLI with the exact requested version
   and source commit is reused without a forced reinstall.
+- **Automatic extension updates.** Normal refresh accepts available updates for
+  `agent-context` and `git` without waiting for terminal input, including Codex
+  worktree setup. Update failures still stop setup; `--frozen` keeps locked versions.
 - **Codex-native workflows.** Generated `speckit-*` skills stay in the
   repository's `.agents/skills`, so each project uses its own locked version.
 - **Governed generated workflows.** Bootstrap applies fail-closed guards for

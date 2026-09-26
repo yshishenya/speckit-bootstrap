@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.10"
+BOOTSTRAP_VERSION="0.9.11"
 
 usage() {
   cat <<'EOF'
@@ -4485,8 +4485,11 @@ main() {
   else
     ensure_extension agent-context ".agents/skills/speckit-agent-context-update/SKILL.md"
     ensure_extension git ".agents/skills/speckit-git-feature/SKILL.md"
-    specify extension update agent-context
-    specify extension update git
+    # Normal refresh installs updates by default, including background worktree
+    # setup. Upstream update has no --yes flag. Supply one answer, then EOF;
+    # preserve its exit status without a yes pipeline under pipefail.
+    specify extension update agent-context <<< 'y'
+    specify extension update git <<< 'y'
     if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 ]]; then
       ensure_extension_from_catalog \
         github-issue-canon \
