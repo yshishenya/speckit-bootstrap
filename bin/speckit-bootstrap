@@ -3345,11 +3345,14 @@ manifest_hardened = (
     "                fi\n"
     "                if [ -z \"$candidate\" ] && [ \"$manifest_declared\" = false ]; then"
 )
+# Spec Kit 1.0.12 removed a redundant ../* alternative; keep our stricter
+# traversal and declared-template checks for both exact upstream forms.
+manifest_v1012 = manifest_upstream.replace("/*|*../*|../*)", "/*|*../*)")
 common_path = required(".specify/scripts/bash/common.sh")
 common_text = pending.get(common_path, common_path.read_text(encoding="utf-8"))
 manifest_counts = {
     form: common_text.count(form)
-    for form in (manifest_upstream, manifest_v091, manifest_hardened)
+    for form in (manifest_upstream, manifest_v091, manifest_v1012, manifest_hardened)
 }
 if manifest_counts[manifest_hardened] == 1 and sum(manifest_counts.values()) == 1:
     pass

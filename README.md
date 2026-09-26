@@ -408,7 +408,7 @@ bash tests/ci-local.sh
 Run the pinned end-to-end bootstrap smoke test:
 
 ```sh
-SPEC_KIT_VERSION=v1.0.1 \
+SPEC_KIT_VERSION=v1.0.12 \
   SPECKIT_GITHUB_ISSUE_CANON_VERSION=v0.3.2 \
   bash tests/smoke-live.sh
 ```
