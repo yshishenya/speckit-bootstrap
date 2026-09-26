@@ -14,6 +14,35 @@ replacements = [tuple(ast.literal_eval(arg) for arg in node.args[:3])
                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                 and node.func.id in ('replace', 'replace_graf_workflow')]
 assert len(replacements) == 3
+manifest_block = helper[helper.index('manifest_upstream = ('):helper.index('\nreplace(', helper.index('manifest_upstream = ('))]
+with tempfile.TemporaryDirectory() as manifest_directory:
+    import sys
+    manifest_root = Path(manifest_directory)
+    common = manifest_root / '.specify/scripts/bash/common.sh'
+    common.parent.mkdir(parents=True)
+    previous = sys.argv
+    sys.argv = ['manifest-test', str(manifest_root)]
+    scope = {}
+    try:
+        exec(compile(setup, '<bootstrap helper>', 'exec'), scope)
+    finally:
+        sys.argv = previous
+    definitions = manifest_block[:manifest_block.index('common_path =')]
+    exec(compile(definitions, '<manifest definitions>', 'exec'), scope)
+    for form in ('manifest_upstream', 'manifest_v091', 'manifest_v1012', 'manifest_hardened'):
+        common.write_text(scope[form])
+        scope['pending'] = {}
+        exec(compile(manifest_block, '<manifest migration>', 'exec'), scope)
+        assert scope['pending'].get(common, common.read_text()) == scope['manifest_hardened']
+    for unknown in ('unknown upstream', scope['manifest_v1012'] + scope['manifest_upstream']):
+        common.write_text(unknown)
+        scope['pending'] = {}
+        try:
+            exec(compile(manifest_block, '<manifest rejection>', 'exec'), scope)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError('unknown or mixed manifest form must fail closed')
 with tempfile.TemporaryDirectory() as directory:
     root = Path(directory)
     for relative, old, _new in replacements:

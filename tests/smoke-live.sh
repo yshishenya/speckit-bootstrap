@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.0.1}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.0.12}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
@@ -69,6 +69,8 @@ export SPECKIT_PONYTAIL=0
 # subsequent frozen invocations from this parent smoke-test shell.
 PATH="$(uv tool dir --bin):$PATH"
 export PATH
+
+python3 "$REPO_ROOT/tests/extension-update-live.py" "$PROJECT"
 
 "$BOOTSTRAP" "$PROJECT" --doctor
 

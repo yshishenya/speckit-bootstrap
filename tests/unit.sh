@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.10" ]]
+  [[ "$output" == "speckit-bootstrap 0.9.11" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -1037,6 +1037,7 @@ test_latest_tag_excludes_prereleases() (
   [[ "$(resolve_latest_tag https://example.invalid/spec-kit.git)" == v1.0.5 ]]
 )
 run_test 'latest tag excludes prereleases and peeled refs' test_latest_tag_excludes_prereleases
+run_test 'extension updates never wait for caller input' python3 "$REPO_ROOT/tests/extension-update.py"
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
