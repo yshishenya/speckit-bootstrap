@@ -48,6 +48,12 @@ speckit-bootstrap .
 | Agent and GitHub conventions vary by project | Reusable Codex skills and issue canon are installed consistently |
 | Rollback means reconstructing an old setup | `--frozen` replays and verifies the recorded dependency set |
 
+## Dependency updates
+
+Normal installation and refresh resolve the latest stable Spec Kit, Issue Canon and Ponytail. Python dependencies are refreshed with `uv --upgrade`, even when the CLI commit is unchanged, within upstream compatibility constraints. When a catalog announces an unavailable bundled extension, the newest shipped bundle is installed through Spec Kit's transactional updater and the unavailable announcement is reported. `--frozen`, `--skip-cli-update` and explicit Ponytail opt-out retain their purpose; `--doctor` checks integrity, not remote freshness. Customized shared project infrastructure is preserved, never overwritten wholesale.
+
+`integrations/codex-worktree.sh` is the versioned GRAF setup hook. It enables Ponytail on creation and only verifies completed worktrees. Install it as the local Codex setup hook after reviewing its GRAF-only repository guard. Daily upstream checks exercise real Ponytail installation in an isolated Codex home.
+
 ## Quick start
 
 You need macOS or Ubuntu with `git`, `curl`, `python3`, and

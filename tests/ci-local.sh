@@ -18,12 +18,13 @@ scripts=(
   tests/ci-local.sh
   tests/unit.sh
   tests/smoke-live.sh
+  integrations/codex-worktree.sh
 )
 
 bash -n "${scripts[@]}"
 shellcheck "${scripts[@]}"
 bash tests/unit.sh
 actionlint
-uvx --from zizmor==1.29.0 zizmor --pedantic .
+uvx --from zizmor==1.32.0 zizmor --pedantic .
 
 echo "ci-local: quick quality gate passed"

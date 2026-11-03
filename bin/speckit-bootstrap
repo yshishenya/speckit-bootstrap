@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.10.0"
+BOOTSTRAP_VERSION="0.11.0"
 
 usage() {
   cat <<'EOF'
@@ -491,12 +491,17 @@ prepare_versions() {
     local catalog_sha256=""
 
     if [[ "$requested_canon" == "latest" ]]; then
-      catalog_entry="$(resolve_issue_canon_catalog_entry)"
-      IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
-      RESOLVED_ISSUE_CANON_VERSION="$catalog_version"
-      RESOLVED_ISSUE_CANON_URL="$catalog_url"
-      RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
-      ISSUE_CANON_INSTALL_FROM_CATALOG=1
+      if [[ -n "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
+        catalog_entry="$(resolve_issue_canon_catalog_entry)"
+        IFS=$'\t' read -r catalog_version catalog_url catalog_sha256 <<< "$catalog_entry"
+        RESOLVED_ISSUE_CANON_VERSION="$catalog_version"
+        RESOLVED_ISSUE_CANON_URL="$catalog_url"
+        RESOLVED_ISSUE_CANON_ARCHIVE_SHA256="$catalog_sha256"
+        ISSUE_CANON_INSTALL_FROM_CATALOG=1
+      else
+        RESOLVED_ISSUE_CANON_VERSION="$(resolve_latest_tag \
+          https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git)"
+      fi
     else
       RESOLVED_ISSUE_CANON_VERSION="$(normalize_tag "$requested_canon")"
       if [[ -n "${SPECKIT_EXTENSION_CATALOG_URL:-}" ]]; then
@@ -639,14 +644,18 @@ install_cli() {
     if [[ "$installed_ref" == "$expected_ref" ]] && \
        { [[ "$RESOLVED_SPEC_KIT_VERSION" != v* ]] || \
          [[ "$installed" == "$RESOLVED_SPEC_KIT_VERSION" ]]; }; then
-      echo "speckit-bootstrap: specify-cli $RESOLVED_SPEC_KIT_VERSION already matches github/spec-kit@$RESOLVED_SPEC_KIT_REF"
-      return
+      if [[ "$FROZEN" -eq 1 ]]; then
+        echo "speckit-bootstrap: specify-cli $RESOLVED_SPEC_KIT_VERSION already matches github/spec-kit@$RESOLVED_SPEC_KIT_REF"
+        return
+      fi
     fi
   fi
 
   require_cmd uv
   echo "speckit-bootstrap: installing specify-cli $RESOLVED_SPEC_KIT_VERSION from github/spec-kit@$RESOLVED_SPEC_KIT_REF"
-  uv tool install specify-cli --force \
+  local -a install_args=(tool install specify-cli --force)
+  [[ "$FROZEN" -eq 1 ]] || install_args+=(--upgrade)
+  uv "${install_args[@]}" \
     --from "git+https://github.com/github/spec-kit.git@$RESOLVED_SPEC_KIT_REF"
 
   # uv does not add its tool directory to PATH for the current process. Make the
@@ -1496,6 +1505,64 @@ ensure_extension() {
 
   printf '%s\n' "$output" >&2
   return 1
+}
+
+# Keep Spec Kit's transactional updater (configuration backup, validation and
+# rollback). Its catalog can announce bundled releases before shipping them.
+update_core_extension() {
+  local interpreter
+  interpreter="$(python3 - "$(command -v specify)" <<'PY'
+import sys
+from pathlib import Path
+
+launcher = Path(sys.argv[1]).resolve()
+line = launcher.read_text(encoding="utf-8").splitlines()[0]
+interpreter = line.removeprefix("#!")
+if not line.startswith("#!/") or not Path(interpreter).is_file():
+    raise SystemExit("speckit-bootstrap: cannot resolve the installed specify interpreter")
+print(interpreter)
+PY
+)" || return 1
+  "$interpreter" - "$1" <<'PY'
+import io
+import sys
+
+import specify_cli
+from packaging.version import Version
+from specify_cli.extensions import ExtensionCatalog, ExtensionManifest
+
+try:
+    from specify_cli.extensions import _commands as commands
+except ImportError:
+    from specify_cli import extensions as commands
+
+extension = sys.argv[1]
+get_info = ExtensionCatalog.get_extension_info
+
+def available_info(self, extension_id):
+    info = get_info(self, extension_id)
+    locate = getattr(commands, "_locate_bundled_extension", None)
+    if (extension_id != extension or extension_id not in ("git", "agent-context")
+            or not info or not info.get("_install_allowed", True)
+            or not info.get("bundled") or info.get("download_url")
+            or info.get("repository") != "https://github.com/github/spec-kit"
+            or locate is None):
+        return info
+    source = locate(extension_id)
+    if source is None:
+        return info
+    available = ExtensionManifest(source / "extension.yml").version
+    if Version(available) != Version(info["version"]):
+        print(f"speckit-bootstrap: {extension_id}: catalog announces {info['version']}; "
+              f"latest available bundled release is {available}")
+        return {**info, "version": available}
+    return info
+
+ExtensionCatalog.get_extension_info = available_info
+sys.argv = ["specify", "extension", "update", extension]
+sys.stdin = io.StringIO("y\n")
+sys.exit(specify_cli.main())
+PY
 }
 
 ensure_extension_from_catalog() {
@@ -4493,8 +4560,8 @@ main() {
     # Normal refresh installs updates by default, including background worktree
     # setup. Upstream update has no --yes flag. Supply one answer, then EOF;
     # preserve its exit status without a yes pipeline under pipefail.
-    specify extension update agent-context <<< 'y'
-    specify extension update git <<< 'y'
+    update_core_extension agent-context
+    update_core_extension git
     if [[ "$ISSUE_CANON_INSTALL_FROM_CATALOG" -eq 1 ]]; then
       ensure_extension_from_catalog \
         github-issue-canon \
@@ -4536,6 +4603,9 @@ main() {
   fi
   clean_caches
   write_lock_file
+  # Record the hashes of our verified overlays immediately, so the next normal
+  # refresh does not have to repair upstream's pre-overlay integration metadata.
+  prepare_codex_skill_refresh || return 1
   hide_install_metadata_diffs
 
   specify self check
