@@ -123,6 +123,37 @@ with tempfile.TemporaryDirectory() as directory:
                 pass
             else:
                 raise AssertionError('unknown or mixed commit policy must fail closed')
+    spec_migration = next(
+        node for node in ast.parse(helper).body
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Name) and node.value.func.id == 'replace_variants'
+        and ast.literal_eval(node.value.args[0]) == '.agents/skills/speckit-specify/SKILL.md'
+    )
+    relative, *states = [ast.literal_eval(arg) for arg in spec_migration.value.args]
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    migration = compile(ast.Module(body=[spec_migration], type_ignores=[]), '<spec template migration>', 'exec')
+    for initial in states:
+        path.write_text(initial)
+        scope['pending'] = {}
+        exec(migration, scope)
+        final = scope['pending'].get(path, path.read_text())
+        assert final == states[-1]
+        assert 'preserve it and load it for the update flow' in final
+        assert 'TEMPLATE_CONTENT' in final and 'composes template layers' in final
+        path.write_text(final)
+        scope['pending'] = {}
+        exec(migration, scope)
+        assert not scope['pending'], 'spec template migration must be idempotent'
+    for unknown in ('unknown template instruction', states[0] + '\n' + states[1], states[-1] + '\n' + states[0]):
+        path.write_text(unknown)
+        scope['pending'] = {}
+        try:
+            exec(migration, scope)
+        except SystemExit:
+            assert not scope['pending'], 'rejected template migration must not stage writes'
+        else:
+            raise AssertionError('unknown or mixed spec template instructions must fail closed')
     preserved = [node for node in ast.parse(helper).body
                  if isinstance(node, ast.If)
                  and 'hashlib.sha256(required(' in ast.get_source_segment(helper, node.test)]

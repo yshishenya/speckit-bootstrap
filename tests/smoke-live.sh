@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.0.12}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.2.6}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
