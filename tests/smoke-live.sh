@@ -69,6 +69,18 @@ export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
 
 "$BOOTSTRAP" "$PROJECT"
 
+python3 - "$PROJECT" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+manifest = json.loads((root / '.specify/integrations/codex.manifest.json').read_text())
+for name, expected in manifest['files'].items():
+    assert hashlib.sha256((root / name).read_bytes()).hexdigest() == expected, name
+print('smoke-live: first install already records final skill hashes')
+PY
+
 # The child bootstrap updates its own PATH. Export uv's bin directory here for
 # subsequent frozen invocations from this parent smoke-test shell.
 PATH="$(uv tool dir --bin):$PATH"

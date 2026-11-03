@@ -4603,6 +4603,9 @@ main() {
   fi
   clean_caches
   write_lock_file
+  # Record the hashes of our verified overlays immediately, so the next normal
+  # refresh does not have to repair upstream's pre-overlay integration metadata.
+  prepare_codex_skill_refresh || return 1
   hide_install_metadata_diffs
 
   specify self check
