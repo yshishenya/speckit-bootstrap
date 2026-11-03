@@ -19,11 +19,14 @@ with tempfile.TemporaryDirectory() as sandbox:
     shutil.copytree(sys.argv[1], project)
     registry_path = project / '.specify/extensions/.registry'
     registry = json.loads(registry_path.read_text())
+    versions = {name: registry['extensions'][name]['version'] for name in ('agent-context', 'git')}
     configs = {}
     for name in ('agent-context', 'git'):
-        registry['extensions'][name]['version'] = '0.0.0'
         config = project / f'.specify/extensions/{name}/{name}-config.yml'
         configs[config] = config.read_bytes()
+    # Current catalogs advertise git 1.0.2 before the CLI ships that payload.
+    # Exercise an available update; the bundled git must remain installed intact.
+    registry['extensions']['agent-context']['version'] = '0.0.0'
     registry_path.write_text(json.dumps(registry))
     # A file avoids filling stdout's pipe while the parent keeps stdin open.
     with tempfile.TemporaryFile() as log:
@@ -43,7 +46,7 @@ with tempfile.TemporaryDirectory() as sandbox:
         assert code == 0, output
     updated = json.loads(registry_path.read_text())
     for name in ('agent-context', 'git'):
-        assert updated['extensions'][name]['version'] != '0.0.0', output
+        assert updated['extensions'][name]['version'] == versions[name], output
     for config, previous in configs.items():
         assert config.read_bytes() == previous, f'configuration changed: {config.name}'
 

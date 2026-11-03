@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BOOTSTRAP="$REPO_ROOT/bin/speckit-bootstrap"
-SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.0.12}"
+SPEC_KIT_VERSION="${SPEC_KIT_VERSION:-v1.2.6}"
 SPECKIT_GITHUB_ISSUE_CANON_VERSION="${SPECKIT_GITHUB_ISSUE_CANON_VERSION:-latest}"
 
 SANDBOX="$(mktemp -d)"
@@ -12,13 +12,15 @@ PROJECT="$SANDBOX/project"
 mkdir -p "$HOME" "$PROJECT"
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  # Repository-scoped Actions tokens can hide public raw/codeload assets with
+  # HTTP 404. Authenticate API requests only; fetch public payloads anonymously.
   mkdir -p "$HOME/.specify"
   umask 077
   printf '%s\n' \
     '{' \
     '  "providers": [' \
     '    {' \
-    '      "hosts": ["github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"],' \
+    '      "hosts": ["api.github.com"],' \
     '      "provider": "github",' \
     '      "auth": "bearer",' \
     '      "token_env": "GITHUB_TOKEN"' \

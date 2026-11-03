@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.11" ]]
+  [[ "$output" == "speckit-bootstrap 0.10.0" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -782,11 +782,12 @@ assert "Current Codex and latest Ponytail" in canary
 assert "npm ci --ignore-scripts --prefix tests/canary" in canary
 assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
 assert "GITHUB_TOKEN: ${{ github.token }}" in ci
-assert "SPEC_KIT_VERSION: v1.0.1" in ci
+assert "SPEC_KIT_VERSION: v1.2.6\n" in ci
 assert "zizmor==1.29.0" in ci
 assert "update-types:" in dependabot
 assert "- major" not in dependabot
 assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
+assert '\"hosts\": [\"api.github.com\"]' in smoke
 assert '\"token\":' not in smoke
 assert "--skip-ponytail" not in smoke
 assert "--branch-numbering" not in bootstrap

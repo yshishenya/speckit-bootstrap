@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.11"
+BOOTSTRAP_VERSION="0.10.0"
 
 usage() {
   cat <<'EOF'
@@ -2175,11 +2175,13 @@ replace(
     "1. If the user explicitly provided `SPECIFY_FEATURE_DIRECTORY` (e.g., via environment variable, argument, or configuration), "
     "resolve it against the repository root and reject absolute paths, `..` segments, symlink escapes, or any target outside the repository",
 )
-replace(
+replace_variants(
     ".agents/skills/speckit-specify/SKILL.md",
-    "   - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point",
-    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, copy the resolved `spec-template` there as the starting point; "
-    "if it already exists, preserve it and load it for the update flow",
+    "   - Write `TEMPLATE_CONTENT` to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point. Do not copy a template "
+    "file from disk instead: when a preset composes `spec-template`, no single file holds the full template.",
+    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, write `TEMPLATE_CONTENT` there as the starting point; "
+    "if it already exists, preserve it and load it for the update flow. Do not copy a template file from disk: "
+    "when the resolver composes template layers, no single file holds the full template.",
 )
 replace(
     ".agents/skills/speckit-specify/SKILL.md",
