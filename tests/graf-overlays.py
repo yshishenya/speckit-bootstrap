@@ -145,7 +145,12 @@ with tempfile.TemporaryDirectory() as directory:
         scope['pending'] = {}
         exec(migration, scope)
         assert not scope['pending'], 'spec template migration must be idempotent'
-    for unknown in ('unknown template instruction', states[0] + '\n' + states[1], states[-1] + '\n' + states[0]):
+    legacy = '   - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point'
+    previous_guard = (
+        '   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, copy the resolved `spec-template` '
+        'there as the starting point; if it already exists, preserve it and load it for the update flow'
+    )
+    for unknown in ('unknown template instruction', legacy, previous_guard, states[0] + '\n' + states[-1]):
         path.write_text(unknown)
         scope['pending'] = {}
         try:

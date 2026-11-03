@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.9.12" ]]
+  [[ "$output" == "speckit-bootstrap 0.10.0" ]]
 }
 
 test_installer_reports_missing_path() (

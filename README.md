@@ -183,8 +183,9 @@ skills versioned with the project that uses them.
 ### Latest first, locked afterward
 
 Spec Kit 1.2.6 is supported, including composed templates returned as
-`TEMPLATE_CONTENT`. Refreshes preserve existing specifications and reject unknown
-or mixed template instructions. The default still resolves the latest stable
+`TEMPLATE_CONTENT`. Refreshes preserve existing specifications. Only the new `TEMPLATE_CONTENT`
+instruction format is supported; legacy copy instructions and unknown or mixed
+forms are rejected. Existing projects move to the new format on normal refresh. The default still resolves the latest stable
 release; CI pins 1.2.6 for regression testing and the upstream canary tests `latest`.
 
 The default non-frozen run intentionally starts from current stable releases:

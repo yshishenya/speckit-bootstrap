@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BOOTSTRAP_VERSION="0.9.12"
+BOOTSTRAP_VERSION="0.10.0"
 
 usage() {
   cat <<'EOF'
@@ -2177,14 +2177,11 @@ replace(
 )
 replace_variants(
     ".agents/skills/speckit-specify/SKILL.md",
-    "   - Copy the resolved `spec-template` file to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point",
     "   - Write `TEMPLATE_CONTENT` to `SPECIFY_FEATURE_DIRECTORY/spec.md` as the starting point. Do not copy a template "
     "file from disk instead: when a preset composes `spec-template`, no single file holds the full template.",
-    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, copy the resolved `spec-template` there as the starting point; "
-    "if it already exists, preserve it and load it for the update flow",
-    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, write the resolved active `spec-template` content there "
-    "as the starting point (use `TEMPLATE_CONTENT` when provided); if it already exists, preserve it and load it for "
-    "the update flow. Do not copy a single template file when the resolver composes template layers.",
+    "   - If `SPECIFY_FEATURE_DIRECTORY/spec.md` does not exist, write `TEMPLATE_CONTENT` there as the starting point; "
+    "if it already exists, preserve it and load it for the update flow. Do not copy a template file from disk: "
+    "when the resolver composes template layers, no single file holds the full template.",
 )
 replace(
     ".agents/skills/speckit-specify/SKILL.md",
