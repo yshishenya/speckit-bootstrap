@@ -787,6 +787,7 @@ assert "zizmor==1.29.0" in ci
 assert "update-types:" in dependabot
 assert "- major" not in dependabot
 assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
+assert '\"hosts\": [\"api.github.com\"]' in smoke
 assert '\"token\":' not in smoke
 assert "--skip-ponytail" not in smoke
 assert "--branch-numbering" not in bootstrap

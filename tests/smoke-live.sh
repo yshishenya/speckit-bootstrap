@@ -12,13 +12,15 @@ PROJECT="$SANDBOX/project"
 mkdir -p "$HOME" "$PROJECT"
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  # Repository-scoped Actions tokens can hide public raw/codeload assets with
+  # HTTP 404. Authenticate API requests only; fetch public payloads anonymously.
   mkdir -p "$HOME/.specify"
   umask 077
   printf '%s\n' \
     '{' \
     '  "providers": [' \
     '    {' \
-    '      "hosts": ["github.com", "api.github.com", "raw.githubusercontent.com", "codeload.github.com"],' \
+    '      "hosts": ["api.github.com"],' \
     '      "provider": "github",' \
     '      "auth": "bearer",' \
     '      "token_env": "GITHUB_TOKEN"' \
