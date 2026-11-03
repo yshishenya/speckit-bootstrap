@@ -1,11 +1,10 @@
 version: 2
 updates:
-  - package-ecosystem: github-actions
+  # Latest updates are requested explicitly; immutable pins and CI gate merging.
+  - package-ecosystem: github-actions # zizmor: ignore[dependabot-cooldown]
     directory: /
     schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+      interval: daily
     groups:
       github-actions:
         patterns:
@@ -13,12 +12,10 @@ updates:
         update-types:
           - minor
           - patch
-  - package-ecosystem: npm
+  - package-ecosystem: npm # zizmor: ignore[dependabot-cooldown]
     directory: /tests/canary
     schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+      interval: daily
     groups:
       codex-canary:
         patterns:

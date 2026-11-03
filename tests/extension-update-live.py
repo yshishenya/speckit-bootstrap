@@ -11,7 +11,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 source = (root / "bin/speckit-bootstrap").read_text()
 calls = [line.strip() for line in source.splitlines()
-         if line.strip().startswith("specify extension update ")]
+         if line.strip().startswith("update_core_extension ")]
 assert len(calls) == 2
 
 with tempfile.TemporaryDirectory() as sandbox:
@@ -24,14 +24,15 @@ with tempfile.TemporaryDirectory() as sandbox:
     for name in ('agent-context', 'git'):
         config = project / f'.specify/extensions/{name}/{name}-config.yml'
         configs[config] = config.read_bytes()
-    # Current catalogs advertise git 1.0.2 before the CLI ships that payload.
-    # Exercise an available update; the bundled git must remain installed intact.
+    # Both core extensions must actually update, including the bundled git
+    # release below the catalog's currently unavailable announcement.
     registry['extensions']['agent-context']['version'] = '0.0.0'
+    registry['extensions']['git']['version'] = '1.0.0' if versions['git'] != '1.0.0' else '0.0.0'
     registry_path.write_text(json.dumps(registry))
     # A file avoids filling stdout's pipe while the parent keeps stdin open.
     with tempfile.TemporaryFile() as log:
         with subprocess.Popen(
-            ['/bin/bash', '-euo', 'pipefail', '-c', '\n'.join(calls)],
+            ['/bin/bash', '-euo', 'pipefail', '-c', 'source "$1"; ' + '\n'.join(calls), '_', str(root / 'bin/speckit-bootstrap')],
             cwd=project, stdin=subprocess.PIPE, stdout=log,
             stderr=subprocess.STDOUT,
         ) as process:

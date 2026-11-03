@@ -10,6 +10,9 @@ SANDBOX="$(mktemp -d)"
 export HOME="$SANDBOX/home"
 PROJECT="$SANDBOX/project"
 mkdir -p "$HOME" "$PROJECT"
+export CODEX_HOME="$HOME/.codex"
+export UV_TOOL_DIR="$SANDBOX/uv-tools"
+export UV_TOOL_BIN_DIR="$SANDBOX/bin"
 
 if [[ -n "${GITHUB_TOKEN:-}" ]]; then
   # Repository-scoped Actions tokens can hide public raw/codeload assets with
@@ -61,9 +64,8 @@ if not expected or actual != expected:
     raise SystemExit(f"smoke-live: default Ponytail version {actual!r} != latest {expected!r}")
 PY
 
-# Keep live smoke isolated from the developer's Codex plugin state; production
-# bootstrap runs enable Ponytail by default unless this explicit opt-out is set.
-export SPECKIT_PONYTAIL=0
+# Ordinary CI may opt out, but the Ponytail lane must exercise the real plugin.
+export SPECKIT_PONYTAIL="${SPECKIT_PONYTAIL:-0}"
 
 "$BOOTSTRAP" "$PROJECT"
 
@@ -75,6 +77,18 @@ export PATH
 python3 "$REPO_ROOT/tests/extension-update-live.py" "$PROJECT"
 
 "$BOOTSTRAP" "$PROJECT" --doctor
+
+if [[ "$SPECKIT_PONYTAIL" == 1 ]]; then
+  python3 - "$PROJECT/.specify/speckit-bootstrap.lock.json" "$LATEST_PONYTAIL" <<'PY'
+import json
+import sys
+with open(sys.argv[1], encoding="utf-8") as handle:
+    lock = json.load(handle)
+assert lock["ponytail"]["enabled"] is True, lock["ponytail"]
+assert lock["ponytail"]["version"] == sys.argv[2], lock["ponytail"]
+print("smoke-live: real latest Ponytail installation verified")
+PY
+fi
 
 python3 - "$PROJECT/.agents/skills/speckit-git-initialize/SKILL.md" <<'PY'
 import sys
@@ -956,13 +970,20 @@ mv "$PROJECT_SKILL_BACKUP" "$PROJECT_SKILL"
 git -C "$PROJECT" add -A
 git -C "$PROJECT" commit -qm 'Bootstrap Spec Kit fixture'
 
+# A matching CLI must still refresh stale transitive dependencies. Use an old
+# compatible packaging release, then exercise the normal real update below.
+CLI_PYTHON="$UV_TOOL_DIR/specify-cli/bin/python"
+uv pip install --python "$CLI_PYTHON" --no-deps packaging==24.2
+"$CLI_PYTHON" -c 'import importlib.metadata as m; assert m.version("packaging") == "24.2"'
+
 for repeat in 1 2; do
   NORMAL_REPEAT_LOG="$SANDBOX/normal-repeat-$repeat.log"
   "$BOOTSTRAP" "$PROJECT" | tee "$NORMAL_REPEAT_LOG"
-  if ! grep -Fq 'already matches' "$NORMAL_REPEAT_LOG"; then
-    echo 'smoke-live: a matching CLI was force-reinstalled on normal repeat' >&2
+  if ! grep -Fq 'installing specify-cli' "$NORMAL_REPEAT_LOG"; then
+    echo 'smoke-live: normal refresh did not resolve current Python dependencies' >&2
     exit 1
   fi
+  "$CLI_PYTHON" -c 'import importlib.metadata as m; from packaging.version import Version; assert Version(m.version("packaging")) > Version("24.2")'
   if [[ -n "$(git -C "$PROJECT" status --short)" ]]; then
     echo "smoke-live: normal repeat $repeat was not idempotent" >&2
     git -C "$PROJECT" status --short >&2

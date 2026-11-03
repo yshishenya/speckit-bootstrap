@@ -34,7 +34,7 @@ run_test() {
 test_version_and_sourceability() {
   local output
   output="$("$BOOTSTRAP" --version)"
-  [[ "$output" == "speckit-bootstrap 0.10.0" ]]
+  [[ "$output" == "speckit-bootstrap 0.11.0" ]]
 }
 
 test_installer_reports_missing_path() (
@@ -513,7 +513,7 @@ test_extension_tree_integrity_detects_payload_tampering() (
   fi
 )
 
-test_matching_cli_skips_force_reinstall() (
+test_matching_cli_refreshes_dependencies() (
   local sandbox="$TEST_ROOT/cli-fast-path"
   local tool="$sandbox/home/.local/share/uv/tools/specify-cli"
   local bin="$sandbox/bin"
@@ -546,14 +546,20 @@ test_matching_cli_skips_force_reinstall() (
   RESOLVED_SPEC_KIT_REF="$expected_ref"
 
   output="$(install_cli)"
+  [[ "$output" == *"installing specify-cli"* ]] || return 1
+  grep -Fq "tool install specify-cli --force --upgrade --from" "$calls" || return 1
+  rm "$calls"
+  FROZEN=1
+  output="$(install_cli)"
   [[ "$output" == *"already matches"* ]] || return 1
   [[ ! -e "$calls" ]] || return 1
+  FROZEN=0
 
   printf '{"url":"https://github.com/github/spec-kit.git","vcs_info":{"commit_id":"%s"}}\n' \
     "$wrong_ref" > "$site/direct_url.json"
   install_cli >/dev/null
   grep -Fq \
-    "tool install specify-cli --force --from git+https://github.com/github/spec-kit.git@$expected_ref" \
+    "tool install specify-cli --force --upgrade --from git+https://github.com/github/spec-kit.git@$expected_ref" \
     "$calls"
 )
 
@@ -630,14 +636,17 @@ test_ponytail_defaults_to_latest_release_tag() (
   # shellcheck disable=SC2030,SC2031
   export GITHUB_ISSUE_CANON_EXTENSION_URL=""
   # shellcheck disable=SC2030,SC2031
-  export SPECKIT_GITHUB_ISSUE_CANON_VERSION="v0.3.1"
+  export SPECKIT_GITHUB_ISSUE_CANON_VERSION="latest"
 
   # shellcheck disable=SC2317,SC2329
   resolve_spec_kit_version() { printf 'v1.0.1\n'; }
   # shellcheck disable=SC2317,SC2329
   resolve_latest_tag() {
-    [[ "$1" == "https://github.com/DietrichGebert/ponytail.git" ]] || return 1
-    printf 'v4.9.0\n'
+    case "$1" in
+      https://github.com/DietrichGebert/ponytail.git) printf 'v4.9.0\n' ;;
+      https://github.com/yshishenya/spec-kit-ext-github-issue-canon.git) printf 'v0.3.1\n' ;;
+      *) return 1 ;;
+    esac
   }
   # shellcheck disable=SC2317,SC2329
   resolve_tag_commit() {
@@ -658,6 +667,7 @@ test_ponytail_defaults_to_latest_release_tag() (
 
   prepare_versions
 
+  [[ "$RESOLVED_ISSUE_CANON_VERSION" == "v0.3.1" ]] || return 1
   [[ "$RESOLVED_PONYTAIL_VERSION" == "v4.9.0" ]] || return 1
   [[ "$RESOLVED_PONYTAIL_REF" == "$ponytail_ref" ]]
 )
@@ -783,7 +793,12 @@ assert "npm ci --ignore-scripts --prefix tests/canary" in canary
 assert canary.count("GITHUB_TOKEN: ${{ github.token }}") == 2
 assert "GITHUB_TOKEN: ${{ github.token }}" in ci
 assert "SPEC_KIT_VERSION: v1.2.6\n" in ci
-assert "zizmor==1.29.0" in ci
+assert "zizmor==1.32.0" in ci
+assert "interval: daily" in dependabot
+assert "cooldown:" not in dependabot
+assert "export SPECKIT_PONYTAIL=0" not in smoke
+assert 'export CODEX_HOME="$HOME/.codex"' in smoke
+assert 'export UV_TOOL_DIR="$SANDBOX/uv-tools"' in smoke
 assert "update-types:" in dependabot
 assert "- major" not in dependabot
 assert '\"token_env\": \"GITHUB_TOKEN\"' in smoke
@@ -984,7 +999,7 @@ run_test 'doctor explains hidden metadata drift' test_doctor_explains_hidden_met
 run_test 'integration refresh respects local changes' test_integration_refresh_respects_local_changes
 run_test 'frozen lock stays immutable when Ponytail is skipped' test_frozen_lock_is_immutable_when_ponytail_is_skipped
 run_test 'extension tree integrity detects payload tampering' test_extension_tree_integrity_detects_payload_tampering
-run_test 'matching CLI skips force reinstall' test_matching_cli_skips_force_reinstall
+run_test 'normal refresh upgrades dependencies; frozen preserves them' test_matching_cli_refreshes_dependencies
 run_test 'frozen skipped CLI requires the locked commit' test_frozen_skip_cli_update_requires_locked_commit
 run_test 'Ponytail defaults enabled with explicit opt-out' test_ponytail_defaults_enabled_with_explicit_opt_out
 run_test 'Ponytail defaults to latest release tag' test_ponytail_defaults_to_latest_release_tag
@@ -1039,6 +1054,8 @@ test_latest_tag_excludes_prereleases() (
 )
 run_test 'latest tag excludes prereleases and peeled refs' test_latest_tag_excludes_prereleases
 run_test 'extension updates never wait for caller input' python3 "$REPO_ROOT/tests/extension-update.py"
+
+run_test 'Codex hook preserves default, opt-out and worktree guards' python3 "$REPO_ROOT/tests/codex-hook.py"
 
 if [[ "$TESTS_FAILED" -ne 0 ]]; then
   printf '%s test(s) failed\n' "$TESTS_FAILED" >&2
